@@ -1,0 +1,142 @@
+---
+title: Update User Profile
+api: PUT /api/auth/profile
+description: Update the authenticated user's profile settings
+---
+
+## Authentication
+
+Required. Must provide a valid JWT token in the Authorization header:
+
+```
+Authorization: Bearer <token>
+```
+
+## Request Body
+
+<ParamField body="username" type="string" optional>
+  New username for the account
+  
+  **Validation rules:**
+  - Minimum 3 characters
+  - Maximum 20 characters
+  - Only letters, numbers, and underscores allowed
+  - Must be unique across all users
+</ParamField>
+
+<ParamField body="preferredLanguage" type="string" optional>
+  User's preferred language for the interface
+  
+  **Allowed values:**
+  - `es` - Spanish
+  - `en` - English
+</ParamField>
+
+<Note>
+At least one field must be provided. Send only the fields you want to update.
+</Note>
+
+## Response
+
+<ResponseField name="message" type="string">
+  Success message ("Perfil actualizado")
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  Updated user object
+  
+  <ResponseField name="id" type="string">
+    User identifier (CUID)
+  </ResponseField>
+  
+  <ResponseField name="username" type="string">
+    Updated username
+  </ResponseField>
+  
+  <ResponseField name="email" type="string">
+    User email (unchanged)
+  </ResponseField>
+  
+  <ResponseField name="preferredLanguage" type="string">
+    Updated language preference
+  </ResponseField>
+  
+  <ResponseField name="highScore" type="number">
+    User's highest score
+  </ResponseField>
+  
+  <ResponseField name="gamesPlayed" type="number">
+    Total games played
+  </ResponseField>
+  
+  <ResponseField name="wins" type="number">
+    Number of duel/challenge wins
+  </ResponseField>
+  
+  <ResponseField name="losses" type="number">
+    Number of duel/challenge losses
+  </ResponseField>
+</ResponseField>
+
+## Error Responses
+
+<ResponseField name="400 Bad Request">
+  - Invalid field values
+  - Username already taken
+  - No fields provided for update
+</ResponseField>
+
+<ResponseField name="401 Unauthorized">
+  - Missing or invalid JWT token
+</ResponseField>
+
+<ResponseField name="404 Not Found">
+  - User account not found
+</ResponseField>
+
+<ResponseField name="500 Internal Server Error">
+  - Database or server error
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X PUT https://api.geochallenge.com/api/auth/profile \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "geo_master",
+    "preferredLanguage": "en"
+  }'
+```
+
+## Example Response
+
+```json
+{
+  "message": "Perfil actualizado",
+  "user": {
+    "id": "clx1234567890abcdef",
+    "username": "geo_master",
+    "email": "user@example.com",
+    "preferredLanguage": "en",
+    "highScore": 1350,
+    "gamesPlayed": 42,
+    "wins": 15,
+    "losses": 8
+  }
+}
+```
+
+## Implementation Details
+
+From `backend/src/controllers/auth.controller.ts:210-250`:
+
+- Username uniqueness is checked before updating
+- Username normalization is applied (lowercase, trim)
+- Only provided fields are updated in the database
+- Response includes full user object with updated values
+
+<Tip>
+This endpoint is useful for implementing user settings pages or profile management features.
+</Tip>

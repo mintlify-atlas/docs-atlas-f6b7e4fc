@@ -1,0 +1,113 @@
+---
+title: Get Leaderboard Statistics
+api: GET /api/leaderboard/stats
+description: Retrieve overall leaderboard statistics and top 3 players
+---
+
+## Authentication
+
+Optional. This endpoint can be accessed without authentication.
+
+## Response
+
+<ResponseField name="totalPlayers" type="number">
+  Total number of players who have recorded at least one game
+</ResponseField>
+
+<ResponseField name="topScore" type="number">
+  The highest score ever achieved on the leaderboard
+</ResponseField>
+
+<ResponseField name="averageScore" type="number">
+  Average high score across all players
+</ResponseField>
+
+<ResponseField name="top3" type="array">
+  The top 3 players on the leaderboard
+  
+  <ResponseField name="rank" type="number">
+    Player's rank (1, 2, or 3)
+  </ResponseField>
+  
+  <ResponseField name="userId" type="string">
+    User identifier (CUID)
+  </ResponseField>
+  
+  <ResponseField name="username" type="string">
+    Player's username
+  </ResponseField>
+  
+  <ResponseField name="highScore" type="number">
+    Player's highest score
+  </ResponseField>
+  
+  <ResponseField name="gamesPlayed" type="number">
+    Total number of games the player has completed
+  </ResponseField>
+</ResponseField>
+
+## Error Responses
+
+<ResponseField name="500 Internal Server Error">
+  Database or server error
+</ResponseField>
+
+## Example Request
+
+```bash
+curl https://api.geochallenge.com/api/leaderboard/stats
+```
+
+## Example Response
+
+```json
+{
+  "totalPlayers": 1247,
+  "topScore": 1500,
+  "averageScore": 847.3,
+  "top3": [
+    {
+      "rank": 1,
+      "userId": "clu1111111111111111",
+      "username": "geo_legend",
+      "highScore": 1500,
+      "gamesPlayed": 523
+    },
+    {
+      "rank": 2,
+      "userId": "clu2222222222222222",
+      "username": "world_master",
+      "highScore": 1485,
+      "gamesPlayed": 412
+    },
+    {
+      "rank": 3,
+      "userId": "clu3333333333333333",
+      "username": "atlas_pro",
+      "highScore": 1470,
+      "gamesPlayed": 389
+    }
+  ]
+}
+```
+
+## Implementation Details
+
+From `backend/src/controllers/leaderboard.controller.ts:76` and `backend/src/services/leaderboard.service.ts`:
+
+- Statistics are computed from all users in the database
+- Only players with `gamesPlayed > 0` are included in `totalPlayers`
+- The `averageScore` is calculated from all players' `highScore` values
+- Top 3 is efficiently retrieved using database ordering and limits
+
+## Caching
+
+This endpoint is a good candidate for caching since leaderboard statistics change relatively infrequently:
+
+- Consider implementing Redis caching with a TTL of 5-10 minutes
+- Invalidate cache when new high scores are recorded
+- Current implementation queries the database on every request
+
+<Info>
+This endpoint is useful for displaying summary statistics on homepage or leaderboard pages, such as "Join 1,247 players competing for the top score of 1,500 points!"
+</Info>

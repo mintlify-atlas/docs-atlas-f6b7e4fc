@@ -1,0 +1,177 @@
+---
+title: Submit Challenge Result
+api: POST /api/challenges/:id/submit
+description: Submit final score and completion for a challenge
+---
+
+## Authentication
+
+Required. Must provide a valid JWT token:
+
+```
+Authorization: Bearer <token>
+```
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The unique challenge identifier (CUID)
+</ParamField>
+
+## Request Body
+
+<ParamField body="score" type="number" required>
+  Total score achieved in the challenge
+  
+  - Must be a non-negative number
+  - Should match the sum of all answer scores
+</ParamField>
+
+<ParamField body="correctCount" type="number" required>
+  Number of correct answers
+  
+  - Must be a non-negative number
+  - Must not exceed the total number of questions
+</ParamField>
+
+<Note>
+The client should calculate these values based on the validated answers from the server. While client-side validation is acceptable, the server should verify answer correctness.
+</Note>
+
+## Response
+
+<ResponseField name="message" type="string">
+  Success message ("Resultado guardado")
+</ResponseField>
+
+<ResponseField name="challenge" type="object">
+  Updated challenge object with the submitted result
+  
+  <ResponseField name="id" type="string">
+    Challenge identifier
+  </ResponseField>
+  
+  <ResponseField name="status" type="string">
+    Updated challenge status
+    
+    May transition to `COMPLETED` if all participants have finished
+  </ResponseField>
+  
+  <ResponseField name="participants" type="array">
+    All participants with updated scores
+    
+    <ResponseField name="userId" type="string">
+      Participant's user ID
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      Participant's username
+    </ResponseField>
+    
+    <ResponseField name="score" type="number" optional>
+      Participant's score (null if not completed)
+    </ResponseField>
+    
+    <ResponseField name="correctCount" type="number" optional>
+      Participant's correct answer count (null if not completed)
+    </ResponseField>
+    
+    <ResponseField name="completedAt" type="string" optional>
+      ISO 8601 timestamp when participant completed the challenge
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="winnerId" type="string" optional>
+    User ID of the winner (set when challenge is completed)
+  </ResponseField>
+</ResponseField>
+
+## Error Responses
+
+<ResponseField name="400 Bad Request">
+  - Invalid score or correctCount values
+  - User is not a participant
+  - User has already submitted results
+  - Challenge has expired
+</ResponseField>
+
+<ResponseField name="401 Unauthorized">
+  Missing or invalid JWT token
+</ResponseField>
+
+<ResponseField name="404 Not Found">
+  Challenge not found
+</ResponseField>
+
+<ResponseField name="500 Internal Server Error">
+  Database or server error
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X POST https://api.geochallenge.com/api/challenges/clx1234567890abcdef/submit \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "score": 1350,
+    "correctCount": 9
+  }'
+```
+
+## Example Response
+
+```json
+{
+  "message": "Resultado guardado",
+  "challenge": {
+    "id": "clx1234567890abcdef",
+    "status": "ACCEPTED",
+    "creatorId": "clu1111111111111111",
+    "categories": ["FLAG", "CAPITAL"],
+    "maxPlayers": 4,
+    "answerTimeSeconds": 20,
+    "createdAt": "2026-03-01T10:00:00.000Z",
+    "expiresAt": "2026-03-08T10:00:00.000Z",
+    "participants": [
+      {
+        "userId": "clu2222222222222222",
+        "username": "geo_master",
+        "score": 1350,
+        "correctCount": 9,
+        "completedAt": "2026-03-01T14:30:45.678Z"
+      },
+      {
+        "userId": "clu3333333333333333",
+        "username": "world_explorer",
+        "score": null,
+        "correctCount": null,
+        "completedAt": null
+      }
+    ],
+    "winnerId": null
+  }
+}
+```
+
+## Winner Determination
+
+When all participants have submitted their results:
+
+1. The challenge `status` transitions to `COMPLETED`
+2. The `winnerId` is set to the participant with the highest score
+3. In case of a tie, the first participant to submit wins
+4. User stats (wins/losses) are updated for all participants
+
+## Implementation Details
+
+From `backend/src/controllers/challenge.controller.ts:91` and `backend/src/services/challenge.service.ts`:
+
+- Results can only be submitted once per participant
+- The `completedAt` timestamp is automatically recorded
+- Challenge expiry is checked before accepting submissions
+- Stats updates occur atomically with result submission
+
+<Tip>
+After submitting, poll GET /api/challenges/:id to check if other participants have finished and to see the final winner.
+</Tip>

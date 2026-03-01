@@ -1,0 +1,149 @@
+---
+title: Get Challenge Questions
+api: GET /api/challenges/:id/questions
+description: Retrieve the questions for a challenge the user has joined
+---
+
+## Authentication
+
+Required. Must provide a valid JWT token:
+
+```
+Authorization: Bearer <token>
+```
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The unique challenge identifier (CUID)
+</ParamField>
+
+## Authorization
+
+The authenticated user must be a participant in the challenge. You cannot retrieve questions for challenges you haven't joined.
+
+## Response
+
+<ResponseField name="questions" type="array">
+  Array of question objects for the challenge
+  
+  <ResponseField name="id" type="string">
+    Question identifier (CUID)
+  </ResponseField>
+  
+  <ResponseField name="category" type="string">
+    Question category
+    
+    Possible values: `FLAG`, `CAPITAL`, `MAP`, `SILHOUETTE`
+  </ResponseField>
+  
+  <ResponseField name="questionText" type="string">
+    The question prompt (e.g., "What country does this flag belong to?")
+  </ResponseField>
+  
+  <ResponseField name="options" type="array of strings">
+    Four multiple-choice options for non-MAP questions
+  </ResponseField>
+  
+  <ResponseField name="correctAnswer" type="string">
+    The correct answer (excluded in client response - validated server-side)
+  </ResponseField>
+  
+  <ResponseField name="imageUrl" type="string" optional>
+    URL to flag or silhouette image (for FLAG and SILHOUETTE categories)
+  </ResponseField>
+  
+  <ResponseField name="latitude" type="number" optional>
+    Target latitude for MAP questions
+  </ResponseField>
+  
+  <ResponseField name="longitude" type="number" optional>
+    Target longitude for MAP questions
+  </ResponseField>
+  
+  <ResponseField name="difficulty" type="string" optional>
+    Question difficulty level: `EASY`, `MEDIUM`, `HARD`
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="answerTimeSeconds" type="number">
+  Time limit per question in seconds (configured when challenge was created)
+  
+  Possible values: 10, 20, or 30
+</ResponseField>
+
+## Error Responses
+
+<ResponseField name="400 Bad Request">
+  - User is not a participant in this challenge
+  - Challenge has not been accepted/started yet
+</ResponseField>
+
+<ResponseField name="401 Unauthorized">
+  Missing or invalid JWT token
+</ResponseField>
+
+<ResponseField name="404 Not Found">
+  Challenge with the given ID does not exist
+</ResponseField>
+
+<ResponseField name="500 Internal Server Error">
+  Database or server error
+</ResponseField>
+
+## Example Request
+
+```bash
+curl https://api.geochallenge.com/api/challenges/clx1234567890abcdef/questions \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+## Example Response
+
+```json
+{
+  "questions": [
+    {
+      "id": "clq1111111111111111",
+      "category": "FLAG",
+      "questionText": "What country does this flag belong to?",
+      "options": ["France", "Netherlands", "Russia", "Luxembourg"],
+      "imageUrl": "https://flagcdn.com/w320/fr.png",
+      "difficulty": "EASY"
+    },
+    {
+      "id": "clq2222222222222222",
+      "category": "CAPITAL",
+      "questionText": "What is the capital of Brazil?",
+      "options": ["São Paulo", "Rio de Janeiro", "Brasília", "Salvador"],
+      "difficulty": "MEDIUM"
+    },
+    {
+      "id": "clq3333333333333333",
+      "category": "MAP",
+      "questionText": "Locate Japan on the map",
+      "latitude": 36.2048,
+      "longitude": 138.2529,
+      "difficulty": "MEDIUM"
+    }
+  ],
+  "answerTimeSeconds": 20
+}
+```
+
+## Implementation Details
+
+From `backend/src/controllers/challenge.controller.ts:64` and `backend/src/services/challenge.service.ts`:
+
+- Questions are pre-selected when the challenge is created (stored in `questionIds`)
+- All participants receive the same questions in the same order
+- The `correctAnswer` field may be excluded from the client response to prevent cheating
+- Questions are only accessible to challenge participants
+
+<Warning>
+Do not expose the correct answers in your client application. Submit answers to the server for validation.
+</Warning>
+
+<Info>
+This endpoint is called when a user starts playing a challenge to load all questions at once.
+</Info>

@@ -68,7 +68,8 @@
             "pages": [
               "api/auth/register",
               "api/auth/login",
-              "api/auth/me"
+              "api/auth/me",
+              "api/auth/profile"
             ]
           },
           {
@@ -76,7 +77,8 @@
             "pages": [
               "api/game/start",
               "api/game/answer",
-              "api/game/results"
+              "api/game/results",
+              "api/game/history"
             ]
           },
           {
@@ -85,6 +87,8 @@
               "api/challenges/create",
               "api/challenges/list",
               "api/challenges/join",
+              "api/challenges/questions",
+              "api/challenges/submit",
               "api/challenges/results"
             ]
           },
@@ -92,7 +96,8 @@
             "group": "Leaderboards",
             "pages": [
               "api/leaderboards/global",
-              "api/leaderboards/user"
+              "api/leaderboards/user",
+              "api/leaderboards/stats"
             ]
           },
           {

@@ -1,34 +1,54 @@
 ---
-title: "Get Game Results"
-api: "GET /api/game/results/:id"
-description: "Retrieve detailed results for a completed game"
+title: Finish Game
+api: POST /api/game/finish
+description: Complete a game session and save results
 ---
-
-## Endpoint
-
-```
-GET /api/game/results/:id
-```
-
-Retrieves comprehensive results for a specific completed game, including answer breakdown, statistics, and high score status.
-
-<Note>
-This endpoint is inferred from the game flow. The actual implementation uses `POST /api/game/finish` to complete a game and return results. This documentation describes the expected result structure.
-</Note>
-
-## Path Parameters
-
-<ParamField path="id" type="string" required>
-  The unique game result ID (returned from the finish endpoint)
-</ParamField>
 
 ## Authentication
 
-Requires JWT authentication. Include the token in the Authorization header:
+Required. Must provide a valid JWT token:
 
 ```
 Authorization: Bearer <token>
 ```
+
+## Request Body
+
+<ParamField body="answers" type="array" required>
+  Array of all answers submitted during the game
+  
+  <ParamField body="questionId" type="string" required>
+    Question identifier (CUID)
+  </ParamField>
+  
+  <ParamField body="answer" type="string" required>
+    User's submitted answer
+  </ParamField>
+  
+  <ParamField body="timeRemaining" type="number" required>
+    Time remaining when answer was submitted (in seconds)
+    
+    Must be between 0 and the time limit per question (typically 10 seconds)
+  </ParamField>
+  
+  <ParamField body="coordinates" type="object" optional>
+    Click coordinates for MAP questions only
+    
+    <ParamField body="lat" type="number">
+      Latitude of clicked location
+    </ParamField>
+    
+    <ParamField body="lng" type="number">
+      Longitude of clicked location
+    </ParamField>
+  </ParamField>
+</ParamField>
+
+<ParamField body="category" type="string" optional>
+  Game category for statistics tracking
+  
+  Possible values: `FLAG`, `CAPITAL`, `MAP`, `SILHOUETTE`, `MIXED`
+</ParamField>
 
 ## Response
 
@@ -37,12 +57,13 @@ Authorization: Bearer <token>
 </ResponseField>
 
 <ResponseField name="gameId" type="string">
-  Unique identifier for this game result
+  Unique identifier for the saved game result (CUID)
 </ResponseField>
 
 <ResponseField name="totalScore" type="number">
   Sum of all points earned across all answers
-  - Calculated in `game.service.ts:172`
+  
+  Maximum possible: 1,500 points (10 questions × 150 points each)
 </ResponseField>
 
 <ResponseField name="correctCount" type="number">
@@ -54,17 +75,20 @@ Authorization: Bearer <token>
 </ResponseField>
 
 <ResponseField name="accuracy" type="number">
-  Percentage of correct answers (rounded)
-  - Formula: `(correctCount / totalQuestions) * 100`
+  Percentage of correct answers (rounded to integer)
+  
+  Formula: `Math.round((correctCount / totalQuestions) * 100)`
 </ResponseField>
 
 <ResponseField name="isHighScore" type="boolean">
   Whether this score is the user's new personal best
-  - Updates `user.highScore` if true (see `game.service.ts:194-200`)
+  
+  - If `true`, the user's `highScore` field is updated
+  - If `true`, the leaderboard is also updated
 </ResponseField>
 
 <ResponseField name="details" type="array">
-  Array of individual answer results
+  Detailed breakdown of each answer
   
   <ResponseField name="questionId" type="string">
     The question identifier
@@ -83,98 +107,65 @@ Authorization: Bearer <token>
   </ResponseField>
   
   <ResponseField name="points" type="number">
-    Points earned for this answer
+    Points earned for this answer (0-150)
   </ResponseField>
   
   <ResponseField name="distance" type="number" optional>
-    Distance in km from target (MAP questions only)
+    Distance in kilometers from target (MAP questions only)
+    
+    Used to determine correctness and calculate score
   </ResponseField>
   
   <ResponseField name="timeRemaining" type="number">
-    Time remaining when answer was submitted
+    Time remaining when answer was submitted (seconds)
   </ResponseField>
 </ResponseField>
 
-## Related Endpoints
+## Error Responses
 
-### POST /api/game/finish
+<ResponseField name="400 Bad Request">
+  - Invalid request body structure
+  - Missing required fields
+  - Invalid time values (negative or exceeding limit)
+</ResponseField>
 
-This is the actual endpoint that creates and returns game results. It processes all answers and saves the game.
+<ResponseField name="401 Unauthorized">
+  Missing or invalid JWT token
+</ResponseField>
 
-**Request Body:**
-
-<ParamField body="answers" type="array" required>
-  Array of all answers submitted during the game
-  
-  <ParamField body="questionId" type="string">
-    Question identifier
-  </ParamField>
-  
-  <ParamField body="answer" type="string">
-    User's answer
-  </ParamField>
-  
-  <ParamField body="timeRemaining" type="number">
-    Time remaining in seconds
-  </ParamField>
-  
-  <ParamField body="coordinates" type="object" optional>
-    Coordinates for MAP questions
-  </ParamField>
-</ParamField>
-
-<ParamField body="category" type="Category" optional>
-  Game category (for statistics tracking)
-</ParamField>
-
-## Database Schema
-
-Game results are stored in the `GameResult` model (see `schema.prisma:47-61`):
-
-```prisma
-model GameResult {
-  id             String   @id @default(cuid())
-  userId         String
-  score          Int
-  correctCount   Int
-  totalQuestions Int
-  category       Category?
-  gameMode       GameMode @default(SINGLE)
-  details        Json?    // Answer breakdown
-  createdAt      DateTime @default(now())
-  
-  user User @relation(fields: [userId], references: [id])
-}
-```
-
-## User Statistics Updates
-
-When a game is finished (see `game.service.ts:189-202`), the following user fields are updated:
-
-- `gamesPlayed`: Incremented by 1
-- `highScore`: Updated if new score exceeds previous best
-- Leaderboard entry created/updated if this is a new high score
+<ResponseField name="500 Internal Server Error">
+  Database or server error during game save
+</ResponseField>
 
 ## Example Request
 
 ```bash
 curl -X POST https://api.geochallenge.com/api/game/finish \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer eyJhbGc..." \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
   -d '{
     "answers": [
       {
-        "questionId": "clx1234567890",
-        "answer": "España",
+        "questionId": "clx1234567890abcdef",
+        "answer": "France",
         "timeRemaining": 7.5
       },
       {
-        "questionId": "clx0987654321",
-        "answer": "Francia",
-        "timeRemaining": 3.2
+        "questionId": "clx0987654321fedcba",
+        "answer": "Berlin",
+        "timeRemaining": 4.2
+      },
+      {
+        "questionId": "clxMAP111222333444",
+        "answer": "Japan",
+        "timeRemaining": 5.8,
+        "coordinates": {
+          "lat": 36.5,
+          "lng": 138.0
+        }
       }
     ],
-    "category": "FLAG"
+    "category": "MIXED"
   }'
 ```
 
@@ -183,34 +174,34 @@ curl -X POST https://api.geochallenge.com/api/game/finish \
 ```json
 {
   "message": "Partida finalizada",
-  "gameId": "clxABC123",
-  "totalScore": 1247,
-  "correctCount": 8,
+  "gameId": "clxABC123XYZ456",
+  "totalScore": 1350,
+  "correctCount": 9,
   "totalQuestions": 10,
-  "accuracy": 80,
+  "accuracy": 90,
   "isHighScore": true,
   "details": [
     {
-      "questionId": "clx1234567890",
+      "questionId": "clx1234567890abcdef",
       "isCorrect": true,
-      "correctAnswer": "España",
-      "userAnswer": "España",
+      "correctAnswer": "France",
+      "userAnswer": "France",
       "points": 137,
       "timeRemaining": 7.5
     },
     {
-      "questionId": "clx0987654321",
+      "questionId": "clx0987654321fedcba",
       "isCorrect": false,
-      "correctAnswer": "Italia",
-      "userAnswer": "Francia",
+      "correctAnswer": "Paris",
+      "userAnswer": "Berlin",
       "points": 0,
-      "timeRemaining": 3.2
+      "timeRemaining": 4.2
     },
     {
-      "questionId": "clxMAP123",
+      "questionId": "clxMAP111222333444",
       "isCorrect": true,
-      "correctAnswer": "Japón",
-      "userAnswer": "Japón",
+      "correctAnswer": "Japan",
+      "userAnswer": "Japan",
       "points": 142,
       "distance": 125.3,
       "timeRemaining": 5.8
@@ -219,43 +210,61 @@ curl -X POST https://api.geochallenge.com/api/game/finish \
 }
 ```
 
-## Scoring Breakdown
+## Scoring Mechanics
 
-The total score is calculated by summing points from all answers:
+Each answer is scored individually and then summed:
 
-- **Correct multiple-choice**: `basePoints + timeBonus` (100-150 pts)
-- **Incorrect**: 0 points
-- **MAP questions**: `(basePoints + timeBonus) * accuracyFactor`
-  - Accuracy factor = `1 - (distance / 2000km)`
-  - Distance < 500km = "correct"
-  - Distance > 2000km = 0 points
+### Multiple-Choice Questions (FLAG, CAPITAL, SILHOUETTE)
 
-See `scoring.ts` for detailed formulas:
-- Multiple choice: `scoring.ts:30-33`
-- MAP scoring: `scoring.ts:38-52`
-- Time bonus: `scoring.ts:15-22`
+```typescript
+// Correct answer
+const basePoints = 100;
+const maxTimeBonus = 50;
+const timeBonus = Math.floor((timeRemaining / totalTime) * maxTimeBonus);
+const points = basePoints + timeBonus; // 100-150 points
+```
 
-## GET /api/game/history
+### MAP Questions
 
-Retrieve game history for the authenticated user:
+Distance-based scoring with correctness threshold at 500km:
 
-**Query Parameters:**
-- `limit` (optional): Number of games to return (default: 10, max: 50)
+```typescript
+const distance = haversineDistance(userCoords, targetCoords);
+const isCorrect = distance <= 500;
 
-**Response:**
-
-```json
-{
-  "history": [
-    {
-      "id": "clxABC123",
-      "score": 1247,
-      "correctCount": 8,
-      "totalQuestions": 10,
-      "category": "FLAG",
-      "gameMode": "SINGLE",
-      "createdAt": "2026-03-01T10:30:00Z"
-    }
-  ]
+if (distance <= 500) {
+  // Very accurate
+  points = basePoints + timeBonus;
+} else {
+  // Apply accuracy penalty
+  const accuracyFactor = Math.max(0, 1 - distance / 2000);
+  points = Math.floor((basePoints + timeBonus) * accuracyFactor);
 }
 ```
+
+## Side Effects
+
+When a game is completed successfully:
+
+1. **Game result saved** to `GameResult` table in database
+2. **User stats updated**:
+   - `gamesPlayed` incremented by 1
+   - `highScore` updated if new score is higher
+3. **Leaderboard updated** if new high score (via `updateLeaderboardScore`)
+
+From `backend/src/controllers/game.controller.ts:135-192` and `backend/src/services/game.service.ts`.
+
+## Related Endpoints
+
+<CardGroup cols={2}>
+  <Card title="Start Game" icon="play" href="/api/game/start">
+    Get questions to start a new game
+  </Card>
+  <Card title="Game History" icon="clock" href="/api/game/history">
+    View past game results
+  </Card>
+</CardGroup>
+
+<Info>
+This endpoint validates all answers server-side to prevent cheating. While clients may calculate scores for immediate feedback, the authoritative score comes from this endpoint.
+</Info>
