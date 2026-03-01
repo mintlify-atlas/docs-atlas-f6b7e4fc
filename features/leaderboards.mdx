@@ -1,0 +1,429 @@
+---
+title: Leaderboards
+description: Global rankings and player statistics in GeoChallenge
+---
+
+GeoChallenge features a global leaderboard that tracks high scores and ranks players based on their best performance.
+
+## Overview
+
+The leaderboard system displays the top players and allows you to search for specific users to compare performance.
+
+<Card title="Leaderboard Features" icon="trophy">
+  - **Top 50 players** displayed by default
+  - **Live search** to find specific players
+  - **Your rank** prominently displayed if outside top 50
+  - **Real-time stats** including total players and average score
+  - **High score tracking** - only your best score counts
+</Card>
+
+---
+
+## How Rankings Work
+
+### High Score System
+
+Your rank is determined by your **highest score** achieved in any game mode:
+
+```typescript schema.prisma
+model User {
+  id                String      @id @default(cuid())
+  username          String      @unique
+  email             String      @unique
+  preferredLanguage String      @default("es")
+  highScore         Int         @default(0)
+  gamesPlayed       Int         @default(0)
+  wins              Int         @default(0)
+  losses            Int         @default(0)
+  // ...
+}
+```
+
+### Score Updates
+
+```typescript backend/src/services/game.service.ts
+export async function saveGameResult(
+  userId: string,
+  answers: AnswerResult[],
+  category?: Category,
+  gameMode: GameMode = GameMode.SINGLE
+): Promise<{ gameId: string; totalScore: number; isHighScore: boolean }> {
+  const totalScore = answers.reduce((sum, a) => sum + a.points, 0);
+  const correctCount = answers.filter((a) => a.isCorrect).length;
+
+  // Create game result
+  const gameResult = await prisma.gameResult.create({
+    data: {
+      userId,
+      score: totalScore,
+      correctCount,
+      totalQuestions: answers.length,
+      category,
+      gameMode,
+      details: answers as any,
+    },
+  });
+
+  // Update user statistics
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { highScore: true, gamesPlayed: true },
+  });
+
+  const isHighScore = totalScore > (user?.highScore || 0);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      gamesPlayed: { increment: 1 },
+      ...(isHighScore && { highScore: totalScore }),
+    },
+  });
+
+  return {
+    gameId: gameResult.id,
+    totalScore,
+    isHighScore,
+  };
+}
+```
+
+<Info>
+Your `highScore` is only updated when you beat your previous record. Playing poorly won't hurt your ranking.
+</Info>
+
+---
+
+## Leaderboard Display
+
+### Frontend Implementation
+
+```typescript frontend/src/pages/RankingsPage.tsx
+interface LeaderboardEntry {
+  rank: number;
+  username: string;
+  score: number;
+  isCurrentUser?: boolean;
+}
+
+type RankingsResponse = {
+  leaderboard: LeaderboardEntry[];
+  userRank: number | null;
+  userScore: number | null;
+};
+
+const { data, error, isLoading, run, invalidate } = useApi<RankingsResponse>(
+  async () => {
+    const leaderboardData = await api.getLeaderboard(50);
+    const userRankData = await api.getMyRank();
+
+    return {
+      leaderboard: leaderboardData.leaderboard.map((entry, index) => ({
+        rank: index + 1,
+        username: entry.username,
+        score: entry.score,
+        isCurrentUser: entry.username === user?.username,
+      })),
+      userRank: userRankData.userRank?.rank || null,
+      userScore: userRankData.userRank?.score || null,
+    };
+  },
+  {
+    cacheKey: `rankings-${user?.username ?? 'anonymous'}`,
+    ttlMs: 60_000,  // Cache for 60 seconds
+  }
+);
+```
+
+### Top 3 Special Styling
+
+```typescript frontend/src/pages/RankingsPage.tsx
+const getRankDisplay = (rank: number) => {
+  if (rank === 1) return '🥇';
+  if (rank === 2) return '🥈';
+  if (rank === 3) return '🥉';
+  return `#${rank}`;
+};
+
+const getRankStyle = (rank: number) => {
+  if (rank === 1) return 'bg-gradient-to-r from-yellow-600 to-yellow-800 border-yellow-500';
+  if (rank === 2) return 'bg-gradient-to-r from-gray-400 to-gray-600 border-gray-400';
+  if (rank === 3) return 'bg-gradient-to-r from-orange-700 to-orange-900 border-orange-600';
+  return 'bg-gray-800 border-gray-700';
+};
+```
+
+The top 3 players receive special visual treatment:
+- **1st place:** Gold medal emoji and gold gradient background
+- **2nd place:** Silver medal emoji and silver gradient background
+- **3rd place:** Bronze medal emoji and bronze gradient background
+- **4th+:** Numbered rank with standard background
+
+---
+
+## Your Rank Display
+
+### Outside Top 50
+
+If your rank is beyond the top 50, it's displayed prominently at the top:
+
+```typescript frontend/src/pages/RankingsPage.tsx
+{data?.userRank && data.userRank > 50 && (
+  <div className="mb-6 p-4 bg-primary/20 border border-primary rounded-xl">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        <span className="text-2xl font-bold text-primary">#{data.userRank}</span>
+        <span className="text-white font-semibold">{user?.username}</span>
+      </div>
+      <span className="text-xl font-bold text-white">{data.userScore?.toLocaleString()} pts</span>
+    </div>
+  </div>
+)}
+```
+
+### Within Top 50
+
+If you're in the top 50, your entry is highlighted:
+
+```typescript frontend/src/pages/RankingsPage.tsx
+className={`p-4 rounded-xl border-2 transition-transform hover:scale-[1.02] ${
+  entry.isCurrentUser ? 'bg-primary/20 border-primary' : getRankStyle(entry.rank)
+}`}
+```
+
+---
+
+## Search Functionality
+
+### Debounced Search
+
+```typescript frontend/src/pages/RankingsPage.tsx
+const [search, setSearch] = useState('');
+const debouncedSearch = useDebounce(search, 200);
+
+const filteredLeaderboard = useMemo(() => {
+  const source = data?.leaderboard ?? [];
+  const normalizedSearch = debouncedSearch.trim().toLowerCase();
+
+  if (!normalizedSearch) {
+    return source;
+  }
+
+  return source.filter((entry) => entry.username.toLowerCase().includes(normalizedSearch));
+}, [data?.leaderboard, debouncedSearch]);
+```
+
+Search features:
+- **200ms debounce** to avoid excessive filtering
+- **Case-insensitive** matching
+- **Partial matches** - search "john" finds "JohnDoe"
+- **Real-time filtering** as you type
+
+---
+
+## Statistics Panel
+
+```typescript frontend/src/pages/RankingsPage.tsx
+<div className="mt-8 p-6 bg-gray-800 rounded-xl">
+  <h3 className="text-lg font-semibold text-white mb-4">{t('rankings.stats')}</h3>
+  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
+    <div>
+      <div className="text-2xl font-bold text-primary">{filteredLeaderboard.length}</div>
+      <div className="text-sm text-gray-400">{t('rankings.totalPlayers')}</div>
+    </div>
+    <div>
+      <div className="text-2xl font-bold text-white">{filteredLeaderboard[0]?.score.toLocaleString() || 0}</div>
+      <div className="text-sm text-gray-400">{t('rankings.topScore')}</div>
+    </div>
+    <div>
+      <div className="text-2xl font-bold text-white">
+        {Math.round(
+          filteredLeaderboard.reduce((acc, entry) => acc + entry.score, 0) / filteredLeaderboard.length
+        ).toLocaleString()}
+      </div>
+      <div className="text-sm text-gray-400">{t('rankings.avgScore')}</div>
+    </div>
+  </div>
+</div>
+```
+
+The stats panel shows:
+- **Total Players:** Count of entries in filtered results
+- **Top Score:** Highest score in filtered results
+- **Average Score:** Mean score of filtered results
+
+---
+
+## Leaderboard Caching
+
+```typescript frontend/src/pages/RankingsPage.tsx
+const { data, error, isLoading, run, invalidate } = useApi<RankingsResponse>(
+  async () => { /* ... */ },
+  {
+    cacheKey: `rankings-${user?.username ?? 'anonymous'}`,
+    ttlMs: 60_000,  // Cache for 60 seconds
+  }
+);
+```
+
+Leaderboard data is cached for 60 seconds to:
+- Reduce server load
+- Improve perceived performance
+- Prevent excessive API calls during browsing
+
+You can manually refresh using the retry button if needed.
+
+---
+
+## Game Result Storage
+
+All game results are stored for historical tracking:
+
+```typescript schema.prisma
+model GameResult {
+  id            String   @id @default(cuid())
+  userId        String
+  score         Int
+  correctCount  Int
+  totalQuestions Int
+  category      Category?
+  gameMode      GameMode @default(SINGLE)
+  details       Json?    // Full answer breakdown
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("game_results")
+}
+
+enum GameMode {
+  SINGLE
+  DUEL
+  CHALLENGE
+}
+```
+
+Each game result includes:
+- **score:** Total points earned
+- **correctCount:** Number of correct answers
+- **totalQuestions:** Always 10
+- **category:** Question category used
+- **gameMode:** SINGLE, DUEL, or CHALLENGE
+- **details:** Full JSON breakdown of each answer
+
+---
+
+## Leaderboard Updates
+
+### When Your Rank Changes
+
+Your leaderboard rank updates automatically when:
+
+1. **You beat your high score** in any game mode
+2. **Other players** beat their high scores and surpass you
+3. **You refresh** the leaderboard page
+
+### Leaderboard Service
+
+```typescript backend/src/services/leaderboard.service.ts
+export async function updateLeaderboardScore(userId: string, score: number) {
+  // Leaderboard is derived from User.highScore
+  // No separate leaderboard table needed
+  await prisma.user.update({
+    where: { id: userId },
+    data: { highScore: score },
+  });
+}
+```
+
+<Note>
+The leaderboard is derived directly from the `users` table sorted by `highScore` in descending order. There's no separate leaderboard table to maintain.
+</Note>
+
+---
+
+## Player Profile Stats
+
+Each user's profile tracks comprehensive statistics:
+
+```typescript schema.prisma
+model User {
+  highScore         Int         @default(0)  // Best score achieved
+  gamesPlayed       Int         @default(0)  // Total games
+  wins              Int         @default(0)  // Duel/Challenge wins
+  losses            Int         @default(0)  // Duel/Challenge losses
+  // ...
+}
+```
+
+These stats are updated after every game:
+- **Single-player:** Updates `gamesPlayed` and potentially `highScore`
+- **Duels:** Updates `gamesPlayed`, `highScore`, and `wins`/`losses`
+- **Challenges:** Updates `gamesPlayed`, `highScore`, and `wins`/`losses`
+
+---
+
+## Maximum Score Calculation
+
+To understand the leaderboard better, here's how maximum scores are calculated:
+
+### Standard Questions (FLAG, CAPITAL, SILHOUETTE)
+
+```typescript backend/src/utils/scoring.ts
+export function calculateScore(isCorrect: boolean, timeRemaining: number): number {
+  if (!isCorrect) return 0;
+  return config.game.basePoints + calculateTimeBonus(timeRemaining);
+}
+
+export function calculateTimeBonus(
+  timeRemaining: number,
+  totalTime: number = config.game.timePerQuestion
+): number {
+  if (timeRemaining <= 0) return 0;
+  const ratio = timeRemaining / totalTime;
+  return Math.floor(ratio * config.game.maxTimeBonus);
+}
+```
+
+**Perfect Game (10/10 correct, instant answers):**
+- Base: 100 points × 10 questions = 1,000 points
+- Time bonus: 50 points × 10 questions = 500 points
+- **Maximum possible: 1,500 points**
+
+### Map Questions
+
+```typescript backend/src/utils/scoring.ts
+const MAP_MAX_DISTANCE_KM = 2000;
+
+export function calculateMapScore(
+  distanceKm: number,
+  timeRemaining: number,
+  maxDistanceKm: number = MAP_MAX_DISTANCE_KM
+): number {
+  if (distanceKm >= maxDistanceKm) return 0;
+
+  const clampedDistance = clamp(distanceKm, 0, maxDistanceKm);
+  const accuracyFactor = 1 - clampedDistance / maxDistanceKm;
+
+  const accuracyPoints = Math.round(config.game.basePoints * accuracyFactor);
+  const timePoints = Math.round(calculateTimeBonus(timeRemaining) * accuracyFactor);
+
+  return accuracyPoints + timePoints;
+}
+```
+
+**Perfect Map Game (10/10 pinpoint accurate, instant):**
+- Same as standard questions: **1,500 points maximum**
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="calculator" href="/architecture">
+    Learn about scoring mechanics and technical details
+  </Card>
+  <Card title="Game Modes" icon="gamepad" href="/features/game-modes">
+    How different modes affect your score
+  </Card>
+</CardGroup>

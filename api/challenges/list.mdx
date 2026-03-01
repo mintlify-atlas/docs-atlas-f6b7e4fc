@@ -1,0 +1,283 @@
+---
+title: "List Challenges"
+api: "GET /api/challenges"
+description: "Retrieve challenges based on user participation and availability"
+---
+
+## Authentication
+
+Requires JWT authentication via `Authorization: Bearer <token>` header.
+
+## Query Parameters
+
+<ParamField query="type" type="string" default="all">
+  Filter challenges by type.
+  
+  Valid values:
+  - `mine` - Only challenges where the user is a participant
+  - `joinable` - Only challenges the user can join (PENDING, not expired, not full, user not already joined)
+  - `all` - Both user's challenges and joinable challenges
+</ParamField>
+
+## Response
+
+<ResponseField name="challenges" type="object[]">
+  Array of challenge objects, sorted by creation date (newest first)
+  
+  <ResponseField name="id" type="string">
+    Unique challenge identifier
+  </ResponseField>
+  
+  <ResponseField name="status" type="string">
+    Current challenge status.
+    
+    Possible values:
+    - `PENDING` - Waiting for players
+    - `ACCEPTED` - In progress or ready to play
+    - `COMPLETED` - All players finished
+    - `EXPIRED` - Expired after 7 days
+    - `DECLINED` - (Not currently used)
+  </ResponseField>
+  
+  <ResponseField name="categories" type="string[]">
+    Challenge categories (MAP, FLAG, CAPITAL, SILHOUETTE, MIXED)
+  </ResponseField>
+  
+  <ResponseField name="maxPlayers" type="number">
+    Maximum player capacity
+  </ResponseField>
+  
+  <ResponseField name="answerTimeSeconds" type="number">
+    Time limit per question (10, 20, or 30 seconds)
+  </ResponseField>
+  
+  <ResponseField name="creator" type="object">
+    Challenge creator information
+    
+    <ResponseField name="id" type="string">
+      Creator user ID
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      Creator username
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="participants" type="object[]">
+    Array of participants, ordered by join time
+    
+    <ResponseField name="userId" type="string">
+      Participant user ID
+    </ResponseField>
+    
+    <ResponseField name="score" type="number | null">
+      Final score, or `null` if not yet completed
+    </ResponseField>
+    
+    <ResponseField name="joinedAt" type="string">
+      ISO 8601 timestamp when joined
+    </ResponseField>
+    
+    <ResponseField name="completedAt" type="string | null">
+      ISO 8601 timestamp when completed, or `null`
+    </ResponseField>
+    
+    <ResponseField name="user" type="object">
+      User information (id, username)
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="participantsCount" type="number">
+    Current number of participants
+  </ResponseField>
+  
+  <ResponseField name="isFull" type="boolean">
+    Whether the challenge has reached `maxPlayers`
+  </ResponseField>
+  
+  <ResponseField name="isUserParticipant" type="boolean">
+    Whether the authenticated user is a participant
+  </ResponseField>
+  
+  <ResponseField name="isJoinable" type="boolean">
+    Whether the authenticated user can join this challenge.
+    
+    `true` if all of the following are met:
+    - Status is `PENDING`
+    - Not expired
+    - Not full
+    - User is not already a participant
+  </ResponseField>
+  
+  <ResponseField name="createdAt" type="string">
+    ISO 8601 timestamp when created
+  </ResponseField>
+  
+  <ResponseField name="expiresAt" type="string">
+    ISO 8601 timestamp when it expires (7 days from creation)
+  </ResponseField>
+  
+  <ResponseField name="completedAt" type="string | null">
+    ISO 8601 timestamp when completed, or `null`
+  </ResponseField>
+  
+  <ResponseField name="winnerId" type="string | null">
+    User ID of the winner, or `null` if not completed or tied
+  </ResponseField>
+</ResponseField>
+
+## Example Request
+
+```bash
+# Get all challenges
+curl https://api.geochallenge.com/api/challenges \
+  -H "Authorization: Bearer <token>"
+
+# Get only joinable challenges
+curl https://api.geochallenge.com/api/challenges?type=joinable \
+  -H "Authorization: Bearer <token>"
+
+# Get only user's challenges
+curl https://api.geochallenge.com/api/challenges?type=mine \
+  -H "Authorization: Bearer <token>"
+```
+
+## Example Response
+
+```json
+{
+  "challenges": [
+    {
+      "id": "clx1abc2def3ghi4jkl5",
+      "status": "PENDING",
+      "categories": ["FLAG", "CAPITAL"],
+      "maxPlayers": 4,
+      "answerTimeSeconds": 20,
+      "creator": {
+        "id": "clx1user123",
+        "username": "player1"
+      },
+      "participants": [
+        {
+          "userId": "clx1user123",
+          "score": null,
+          "joinedAt": "2026-03-01T12:00:00.000Z",
+          "completedAt": null,
+          "user": {
+            "id": "clx1user123",
+            "username": "player1"
+          }
+        },
+        {
+          "userId": "clx1user456",
+          "score": null,
+          "joinedAt": "2026-03-01T12:05:00.000Z",
+          "completedAt": null,
+          "user": {
+            "id": "clx1user456",
+            "username": "player2"
+          }
+        }
+      ],
+      "participantsCount": 2,
+      "isFull": false,
+      "isUserParticipant": false,
+      "isJoinable": true,
+      "createdAt": "2026-03-01T12:00:00.000Z",
+      "expiresAt": "2026-03-08T12:00:00.000Z",
+      "completedAt": null,
+      "winnerId": null
+    },
+    {
+      "id": "clx1xyz9uvw8rst7",
+      "status": "COMPLETED",
+      "categories": ["MAP"],
+      "maxPlayers": 2,
+      "answerTimeSeconds": 30,
+      "creator": {
+        "id": "clx1user789",
+        "username": "player3"
+      },
+      "participants": [
+        {
+          "userId": "clx1user789",
+          "score": 8500,
+          "joinedAt": "2026-02-28T10:00:00.000Z",
+          "completedAt": "2026-02-28T10:15:00.000Z",
+          "user": {
+            "id": "clx1user789",
+            "username": "player3"
+          }
+        },
+        {
+          "userId": "clx1currentUser",
+          "score": 7200,
+          "joinedAt": "2026-02-28T10:02:00.000Z",
+          "completedAt": "2026-02-28T10:18:00.000Z",
+          "user": {
+            "id": "clx1currentUser",
+            "username": "currentUser"
+          }
+        }
+      ],
+      "participantsCount": 2,
+      "isFull": true,
+      "isUserParticipant": true,
+      "isJoinable": false,
+      "createdAt": "2026-02-28T10:00:00.000Z",
+      "expiresAt": "2026-03-07T10:00:00.000Z",
+      "completedAt": "2026-02-28T10:18:00.000Z",
+      "winnerId": "clx1user789"
+    }
+  ]
+}
+```
+
+## Error Responses
+
+### 401 Unauthorized
+
+Returned when the JWT token is missing or invalid.
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "Error al obtener desafíos"
+}
+```
+
+## Behavior Notes
+
+### Automatic Status Updates
+
+Before returning results, the endpoint automatically updates any `PENDING` challenges that have passed their `expiresAt` timestamp to `EXPIRED` status.
+
+### Filter Logic
+
+**type=mine**
+- Returns challenges where the user is in the participants list
+
+**type=joinable**
+- Status must be `PENDING`
+- Not expired (`expiresAt > now`)
+- User is NOT already a participant
+- Not full (`participants.length < maxPlayers`)
+
+**type=all** (default)
+- Combines both filters with OR logic
+- Shows user's challenges AND joinable challenges
+
+### Helper Fields
+
+The response includes computed fields to simplify client logic:
+- `participantsCount` - Current participant count
+- `isFull` - Whether max capacity is reached
+- `isUserParticipant` - Whether the requesting user is participating
+- `isJoinable` - Whether the user can join right now
+
+## Use Cases
+
+- **Lobby screen**: Use `type=all` to show both active challenges and available ones
+- **My challenges**: Use `type=mine` to show user's challenge history
+- **Join flow**: Use `type=joinable` to show only challenges the user can join

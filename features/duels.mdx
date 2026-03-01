@@ -1,0 +1,521 @@
+---
+title: Real-Time Duels
+description: Compete head-to-head against other players in real-time matchmaking
+---
+
+Duels are real-time 1v1 geography battles where two players compete simultaneously by answering the same questions.
+
+## Overview
+
+Duels provide instant competitive action through automatic matchmaking and synchronized gameplay.
+
+<Card title="Duel Features" icon="swords">
+  - **Real-time matchmaking** by category
+  - **Synchronized gameplay** - same questions, same timing
+  - **Live score updates** during the match
+  - **Winner takes all** - no ties in stats
+  - **10 questions**, 10 seconds each
+</Card>
+
+---
+
+## Matchmaking System
+
+### Queue Management
+
+```typescript backend/src/sockets/duel.handler.ts
+interface QueuedPlayer {
+  userId: string;
+  username: string;
+  socketId: string;
+  joinedAt: Date;
+  category?: Category;
+}
+
+export class MatchmakingQueue {
+  private queue: QueuedPlayer[] = [];
+
+  addPlayer(player: QueuedPlayer): void {
+    // Remove if already in queue
+    this.removePlayer(player.userId);
+    this.queue.push({
+      ...player,
+      category: normalizeCategory(player.category),
+    });
+  }
+
+  findMatch(): [QueuedPlayer, QueuedPlayer] | null {
+    if (this.queue.length < 2) return null;
+
+    for (let i = 0; i < this.queue.length - 1; i++) {
+      for (let j = i + 1; j < this.queue.length; j++) {
+        const player1 = this.queue[i];
+        const player2 = this.queue[j];
+        const player1Category = normalizeCategory(player1.category);
+        const player2Category = normalizeCategory(player2.category);
+
+        if (!isCompatibleCategory(player1Category, player2Category)) {
+          continue;
+        }
+
+        // Match found! Remove from queue
+        this.queue.splice(j, 1);
+        this.queue.splice(i, 1);
+        return [player1, player2];
+      }
+    }
+
+    return null;
+  }
+}
+```
+
+### Category Matching
+
+```typescript backend/src/sockets/duel.handler.ts
+const DUEL_CATEGORIES: Category[] = ['MAP', 'FLAG', 'CAPITAL', 'SILHOUETTE', 'MIXED'];
+
+function isCompatibleCategory(categoryA: Category, categoryB: Category): boolean {
+  return categoryA === categoryB;
+}
+
+function normalizeCategory(category?: Category): Category {
+  if (!category) {
+    return 'MIXED';
+  }
+
+  return DUEL_CATEGORIES.includes(category) ? category : 'MIXED';
+}
+```
+
+<Note>
+Players are only matched if they selected the **same category**. A player searching for FLAG duels will only match with another FLAG player.
+</Note>
+
+---
+
+## Duel Lifecycle
+
+### Socket Events
+
+```typescript frontend/src/pages/DuelPage.tsx
+type DuelState = 'searching' | 'matched' | 'playing' | 'waiting' | 'finished';
+
+// Connect to socket and join queue
+socketService.connect();
+
+// Event handlers
+socketService.socket?.on('duel:matched', handleMatched);
+socketService.socket?.on('duel:opponent', handleOpponent);
+socketService.socket?.on('duel:question', handleQuestion);
+socketService.socket?.on('duel:questionResult', handleAnswerResult);
+socketService.socket?.on('duel:finished', handleDuelFinished);
+socketService.socket?.on('duel:opponent-disconnected', handleOpponentDisconnected);
+
+// Join matchmaking queue
+socketService.joinDuelQueue(duelCategory);
+```
+
+### Active Duel Structure
+
+```typescript backend/src/sockets/duel.handler.ts
+interface ActiveDuel {
+  id: string;
+  players: {
+    userId: string;
+    username: string;
+    socketId: string;
+    answers: AnswerResult[];
+    score: number;
+    ready: boolean;
+    pendingQuestionIndex?: number;
+  }[];
+  questions: GameQuestion[];
+  questionsData: any[];  // Full questions with answers for validation
+  currentQuestionIndex: number;
+  status: 'waiting' | 'countdown' | 'playing' | 'finished';
+  category?: Category;
+  startedAt?: Date;
+  questionStartedAt?: Date;
+  resolvingQuestionIndex?: number;
+}
+```
+
+---
+
+## Duel Flow
+
+<Steps>
+  <Step title="1. Searching">
+    Player joins matchmaking queue
+    
+    ```typescript backend/src/sockets/duel.handler.ts
+    socket.on('duel:queue', async (data?: { category?: Category }) => {
+      const selectedCategory = normalizeCategory(data?.category);
+
+      // Verify not already in a duel
+      if (playerDuels.has(user.userId)) {
+        socket.emit('duel:error', { message: 'Ya estás en un duelo activo' });
+        return;
+      }
+
+      // Add to queue
+      queue.addPlayer({
+        userId: user.userId,
+        username: user.username,
+        socketId: socket.id,
+        joinedAt: new Date(),
+        category: selectedCategory,
+      });
+
+      // Try to find match
+      const match = queue.findMatch();
+      if (match) {
+        await createDuel(io, match[0], match[1], normalizeCategory(match[0].category));
+      }
+    });
+    ```
+  </Step>
+  
+  <Step title="2. Matched">
+    Opponent found, waiting for both players to ready up
+    
+    ```typescript backend/src/sockets/duel.handler.ts
+    const READY_TIMEOUT_MS = 7000;
+
+    // Notify both players
+    io.to(duelId).emit('duel:matched', {
+      duelId,
+      opponent: null,
+      questionsCount: questions.length,
+      timePerQuestion: config.game.timePerQuestion,
+      category: category || 'MIXED',
+    });
+
+    // Send opponent info to each player
+    io.to(player1.socketId).emit('duel:opponent', {
+      userId: player2.userId,
+      username: player2.username,
+    });
+
+    // Auto-start after timeout if not ready
+    setTimeout(() => {
+      if (shouldForceStartDuel(...)) {
+        for (const player of duel.players) {
+          player.ready = true;
+        }
+        startDuelCountdown(io, duel);
+      }
+    }, READY_TIMEOUT_MS);
+    ```
+  </Step>
+  
+  <Step title="3. Countdown">
+    3-second countdown before questions begin
+    
+    ```typescript backend/src/sockets/duel.handler.ts
+    function startDuelCountdown(io: SocketIOServer, duel: ActiveDuel) {
+      duel.status = 'countdown';
+
+      io.to(duel.id).emit('duel:countdown', { seconds: 3 });
+
+      let countdown = 3;
+      const countdownInterval = setInterval(() => {
+        countdown--;
+        if (countdown > 0) {
+          io.to(duel.id).emit('duel:countdown', { seconds: countdown });
+        } else {
+          clearInterval(countdownInterval);
+          startDuel(io, duel);
+        }
+      }, 1000);
+    }
+    ```
+  </Step>
+  
+  <Step title="4. Playing">
+    Both players answer questions simultaneously
+    
+    ```typescript backend/src/sockets/duel.handler.ts
+    socket.on('duel:answer', async (data: {
+      questionId: string;
+      answer: string;
+      timeRemaining: number;
+      coordinates?: { lat: number; lng: number };
+    }) => {
+      const duel = activeDuels.get(duelId);
+      const player = duel.players.find((p) => p.userId === user.userId);
+
+      // Validate answer
+      const result = await validateAnswer(
+        data.questionId,
+        data.answer,
+        data.timeRemaining,
+        data.coordinates
+      );
+
+      player.answers.push(result);
+      player.score += result.points;
+
+      // Notify both players
+      io.to(duel.id).emit('duel:playerAnswered', {
+        userId: user.userId,
+        questionIndex: duel.currentQuestionIndex,
+      });
+
+      // If both answered, show result and move to next question
+      if (duel.players.every((p) => p.answers.length > duel.currentQuestionIndex)) {
+        await showQuestionResult(io, duel, duel.currentQuestionIndex);
+      }
+    });
+    ```
+  </Step>
+  
+  <Step title="5. Question Result">
+    Show correct answer and scores, then advance
+    
+    ```typescript backend/src/sockets/duel.handler.ts
+    async function showQuestionResult(io: SocketIOServer, duel: ActiveDuel, questionIndex: number) {
+      const results = duel.players.map((p) => ({
+        userId: p.userId,
+        username: p.username,
+        answer: p.answers[questionIndex],
+        totalScore: p.score,
+      }));
+
+      io.to(duel.id).emit('duel:questionResult', {
+        questionIndex,
+        correctAnswer: questionData?.correctAnswer,
+        results,
+      });
+
+      // Wait 3 seconds, then next question or end duel
+      setTimeout(() => {
+        duel.currentQuestionIndex++;
+        if (duel.currentQuestionIndex >= duel.questions.length) {
+          const winnerId = determineDuelWinner([duel.players[0], duel.players[1]]);
+          endDuel(io, duel, winnerId, 'completed');
+        } else {
+          sendQuestion(io, duel);
+        }
+      }, 3000);
+    }
+    ```
+  </Step>
+  
+  <Step title="6. Finished">
+    Display final results and winner
+    
+    ```typescript backend/src/sockets/duel.handler.ts
+    async function endDuel(
+      io: SocketIOServer,
+      duel: ActiveDuel,
+      winnerId: string | null,
+      reason: 'completed' | 'opponent_disconnected' | 'cancelled'
+    ) {
+      duel.status = 'finished';
+
+      const finalResults = duel.players.map((p) => ({
+        userId: p.userId,
+        username: p.username,
+        score: p.score,
+        correctCount: p.answers.filter((a) => a.isCorrect).length,
+        isWinner: p.userId === winnerId,
+      }));
+
+      io.to(duel.id).emit('duel:finished', {
+        reason,
+        winnerId,
+        isDraw: winnerId === null && reason === 'completed',
+        results: finalResults,
+      });
+
+      // Save results to database
+      for (const player of duel.players) {
+        await saveGameResult(
+          player.userId,
+          player.answers,
+          duel.category,
+          GameMode.DUEL
+        );
+
+        // Update wins/losses
+        await prisma.user.update({
+          where: { id: player.userId },
+          data: {
+            wins: player.userId === winnerId ? { increment: 1 } : undefined,
+            losses: winnerId && player.userId !== winnerId ? { increment: 1 } : undefined,
+          },
+        });
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Question Timing
+
+### Auto-Close Mechanism
+
+```typescript backend/src/sockets/duel.handler.ts
+function sendQuestion(io: SocketIOServer, duel: ActiveDuel) {
+  const questionIndex = duel.currentQuestionIndex;
+  const question = duel.questions[questionIndex];
+  duel.questionStartedAt = new Date();
+
+  io.to(duel.id).emit('duel:question', {
+    questionIndex,
+    totalQuestions: duel.questions.length,
+    question,
+    timeLimit: config.game.timePerQuestion,
+  });
+
+  // Timer to force end of question if no response
+  setTimeout(() => {
+    const currentDuel = activeDuels.get(duel.id);
+    if (currentDuel && shouldAutoCloseQuestion(...)) {
+      // Add empty answers for non-responders
+      for (const player of currentDuel.players) {
+        if (player.answers.length <= questionIndex) {
+          player.pendingQuestionIndex = undefined;
+          player.answers.push(createUnansweredResult(question.id));
+        }
+      }
+      showQuestionResult(io, currentDuel, questionIndex);
+    }
+  }, (config.game.timePerQuestion + 2) * 1000); // +2 seconds buffer
+}
+```
+
+<Warning>
+If a player doesn't answer within the time limit, an unanswered result (0 points) is automatically added to prevent the duel from stalling.
+</Warning>
+
+---
+
+## Disconnect Handling
+
+```typescript backend/src/sockets/duel.handler.ts
+socket.on('disconnect', () => {
+  const duelId = playerDuels.get(user.userId);
+  if (duelId) {
+    const duel = activeDuels.get(duelId);
+    if (duel && duel.status !== 'finished') {
+      // The other player wins by forfeit
+      const winner = duel.players.find((p) => p.userId !== user.userId);
+      endDuel(io, duel, winner?.userId || null, 'opponent_disconnected');
+    }
+  }
+});
+```
+
+```typescript frontend/src/pages/DuelPage.tsx
+const handleOpponentDisconnected = () => {
+  setDuelResult({
+    winner: user?.id || null,
+    myScore: scoreRef.current,
+    opponentScore: 0,
+    opponentName: opponentRef.current?.username || 'Opponent',
+  });
+  setDuelState('finished');
+};
+```
+
+If a player disconnects during a duel:
+- The remaining player is declared the winner
+- The disconnected player receives a loss
+- The duel immediately ends
+
+---
+
+## Duel UI States
+
+### Header Display
+
+```typescript frontend/src/pages/DuelPage.tsx
+header={
+  <header className="sticky top-0 z-30 border-b border-gray-700 bg-gray-800/95 px-3 py-2 pt-2 backdrop-blur sm:px-4">
+    <div className="max-w-4xl mx-auto flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-sm font-bold text-white">
+          {user?.username?.charAt(0).toUpperCase()}
+        </div>
+        <span className="text-xl font-bold text-primary">{myScore}</span>
+      </div>
+
+      <Timer
+        duration={TIME_PER_QUESTION}
+        timeRemaining={timeRemaining}
+        onTick={setTimeRemaining}
+        onComplete={handleTimeComplete}
+        isActive={duelState === 'playing' && !showResult}
+      />
+
+      <div className="flex items-center gap-2">
+        <span className="text-xl font-bold text-red-400">{opponentScore}</span>
+        <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-sm font-bold text-white">
+          {opponent?.username?.charAt(0).toUpperCase()}
+        </div>
+      </div>
+    </div>
+  </header>
+}
+```
+
+The duel header shows:
+- Your avatar and score (left, primary color)
+- Timer (center)
+- Opponent avatar and score (right, red color)
+
+---
+
+## Stats Tracking
+
+```typescript backend/src/sockets/duel.handler.ts
+// Update wins/losses
+await prisma.user.update({
+  where: { id: player.userId },
+  data: {
+    wins: player.userId === winnerId ? { increment: 1 } : undefined,
+    losses: winnerId && player.userId !== winnerId ? { increment: 1 } : undefined,
+  },
+});
+
+// Update leaderboard if high score
+if (isHighScore) {
+  await updateLeaderboardScore(player.userId, totalScore);
+}
+```
+
+```typescript schema.prisma
+model User {
+  // ...
+  wins              Int         @default(0)
+  losses            Int         @default(0)
+  // ...
+}
+```
+
+Duel results update user stats:
+- **Winner:** `wins` incremented by 1
+- **Loser:** `losses` incremented by 1
+- **Both:** `gamesPlayed` incremented, high score potentially updated
+
+<Note>
+Unlike challenges, duels always have a winner (or opponent disconnected). Ties in score still result in a winner determination based on the `determineDuelWinner` logic.
+</Note>
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Challenges" icon="envelope" href="/features/challenges">
+    Asynchronous multiplayer mode
+  </Card>
+  <Card title="Game Modes" icon="gamepad" href="/features/game-modes">
+    Overview of all game modes
+  </Card>
+</CardGroup>

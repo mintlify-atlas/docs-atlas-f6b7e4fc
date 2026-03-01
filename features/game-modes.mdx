@@ -1,0 +1,306 @@
+---
+title: Game Modes
+description: Explore single-player, duels, and multiplayer challenges in GeoChallenge
+---
+
+GeoChallenge offers three distinct game modes, each providing a unique way to test your geography knowledge.
+
+## Single-Player Mode
+
+Practice and improve your geography skills at your own pace.
+
+### How It Works
+
+- **10 questions** per game session
+- **10 seconds** per question
+- Questions drawn from your selected category
+- Score saved to your profile and leaderboard
+
+### Gameplay Flow
+
+1. Select a category (flags, capitals, maps, silhouettes, or mixed)
+2. Answer 10 questions within the time limit
+3. View your results and accuracy statistics
+4. High scores automatically update the global leaderboard
+
+<CodeGroup>
+```typescript frontend/src/pages/GamePage.tsx
+const { TIME_PER_QUESTION } = GAME_CONSTANTS; // 10 seconds
+
+const {
+  state,
+  startGame,
+  submitAnswer,
+  nextQuestion,
+  finishGame,
+  resetGame,
+} = useGame();
+
+const { questions, currentIndex, score, results, status } = state;
+```
+
+```typescript backend/src/services/game.service.ts
+export async function getQuestionsForGame(
+  category?: Category,
+  count: number = config.game.questionsPerGame,
+  excludeIds: string[] = []
+): Promise<GameQuestion[]> {
+  // Fetch questions from database
+  let questions = await prisma.question.findMany({
+    where: {
+      ...(category && category !== Category.MIXED && { category }),
+      id: { notIn: excludeIds },
+    },
+  });
+
+  // For MIXED category, blend from all categories
+  if (category === Category.MIXED || !category) {
+    const categories = [Category.FLAG, Category.CAPITAL, Category.MAP, Category.SILHOUETTE];
+    const mixedQuestions = [];
+    for (const cat of categories) {
+      const catQuestions = await prisma.question.findMany({
+        where: { category: cat, id: { notIn: excludeIds } },
+      });
+      mixedQuestions.push(...catQuestions);
+    }
+    questions = mixedQuestions;
+  }
+
+  // Randomly select questions
+  const selectedQuestions = selectRandom(questions, count);
+  return selectedQuestions;
+}
+```
+</CodeGroup>
+
+### Scoring System
+
+Single-player games use the standard scoring formula:
+
+<Card title="Standard Scoring" icon="calculator">
+  **Base Points:** 100 per correct answer
+  
+  **Time Bonus:** Up to 50 additional points based on speed
+  
+  **Formula:** `score = 100 + (timeRemaining / 10) * 50`
+</Card>
+
+---
+
+## Duel Mode
+
+Compete head-to-head against another player in real-time.
+
+### Matchmaking
+
+- Join a matchmaking queue by category
+- Automatically matched with an opponent in the same category
+- Both players must be ready before the duel begins
+- **7-second timeout** for ready confirmation (auto-starts if not ready)
+
+### Duel Gameplay
+
+- Both players answer the **same 10 questions**
+- **10 seconds per question** for both players
+- Real-time score updates
+- Winner determined by highest total score
+- Ties are possible when scores are equal
+
+<CodeGroup>
+```typescript frontend/src/pages/DuelPage.tsx
+type DuelState = 'searching' | 'matched' | 'playing' | 'waiting' | 'finished';
+
+const DUEL_CATEGORIES: Category[] = ['FLAG', 'CAPITAL', 'MAP', 'SILHOUETTE', 'MIXED'];
+
+// Real-time socket events
+socketService.socket?.on('duel:matched', handleMatched);
+socketService.socket?.on('duel:opponent', handleOpponent);
+socketService.socket?.on('duel:question', handleQuestion);
+socketService.socket?.on('duel:questionResult', handleAnswerResult);
+socketService.socket?.on('duel:finished', handleDuelFinished);
+socketService.socket?.on('duel:opponent-disconnected', handleOpponentDisconnected);
+```
+
+```typescript backend/src/sockets/duel.handler.ts
+const READY_TIMEOUT_MS = 7000;
+
+interface ActiveDuel {
+  id: string;
+  players: {
+    userId: string;
+    username: string;
+    socketId: string;
+    answers: AnswerResult[];
+    score: number;
+    ready: boolean;
+  }[];
+  questions: GameQuestion[];
+  currentQuestionIndex: number;
+  status: 'waiting' | 'countdown' | 'playing' | 'finished';
+  category?: Category;
+}
+```
+</CodeGroup>
+
+### Duel States
+
+<Steps>
+  <Step title="Searching">
+    Player joins the matchmaking queue and waits for an opponent
+  </Step>
+  <Step title="Matched">
+    Opponent found! Both players see each other's usernames
+  </Step>
+  <Step title="Countdown">
+    3-second countdown before the duel begins
+  </Step>
+  <Step title="Playing">
+    Answer questions in real-time against your opponent
+  </Step>
+  <Step title="Finished">
+    View results, winner announcement, and final scores
+  </Step>
+</Steps>
+
+### Victory Conditions
+
+- **Winner:** Player with the highest total score
+- **Tie:** Both players have equal scores
+- **Forfeit:** Opponent disconnects during the match
+
+---
+
+## Challenge Mode
+
+Create custom multiplayer challenges and invite friends.
+
+### Creating Challenges
+
+Challenges offer flexible configuration options:
+
+- **Players:** 2-8 participants
+- **Categories:** Choose one or multiple categories (or mixed)
+- **Answer Time:** 10, 20, or 30 seconds per question
+- **Questions:** Always 10 questions per challenge
+- **Expiration:** Challenges expire after 7 days
+
+<CodeGroup>
+```typescript frontend/src/pages/ChallengesPage.tsx
+const categories = ['MIXED', 'FLAG', 'CAPITAL', 'MAP', 'SILHOUETTE'];
+const playerOptions = [2, 3, 4, 5, 6, 7, 8];
+const timeOptions = [10, 20, 30]; // seconds
+
+const handleCreate = async (e: React.FormEvent) => {
+  e.preventDefault();
+  await api.post('/challenges', {
+    categories: createCategories,
+    maxPlayers: createMaxPlayers,
+    answerTimeSeconds: createTime,
+  });
+};
+```
+
+```typescript backend/src/services/challenge.service.ts
+const CHALLENGE_EXPIRY_DAYS = 7;
+const QUESTIONS_PER_CHALLENGE = 10;
+const ALLOWED_TIME_SECONDS = [10, 20, 30] as const;
+
+async createChallenge(
+  creatorId: string,
+  categories: Category[] | undefined,
+  maxPlayers: number,
+  answerTimeSeconds: number
+) {
+  if (maxPlayers < 2 || maxPlayers > 8) {
+    throw new Error('El desafío debe ser para entre 2 y 8 personas');
+  }
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + CHALLENGE_EXPIRY_DAYS);
+
+  const challenge = await prisma.challenge.create({
+    data: {
+      creatorId,
+      categories: selectedCategories,
+      maxPlayers,
+      answerTimeSeconds,
+      questionIds,
+      expiresAt,
+      participants: {
+        create: { userId: creatorId },
+      },
+    },
+  });
+
+  return challenge;
+}
+```
+</CodeGroup>
+
+### Challenge Lifecycle
+
+<AccordionGroup>
+  <Accordion title="PENDING - Waiting for Players">
+    - Challenge is open for others to join
+    - Creator automatically participates
+    - Challenge expires after 7 days if not filled
+    - Once all slots are filled, status changes to ACCEPTED
+  </Accordion>
+  
+  <Accordion title="ACCEPTED - Ready to Play">
+    - All player slots are filled
+    - Participants can start playing
+    - Each player plays independently (not simultaneous)
+    - Questions are identical for all participants
+  </Accordion>
+  
+  <Accordion title="COMPLETED - All Played">
+    - All participants have submitted their scores
+    - Winner is determined by highest score
+    - Ties result in no winner
+    - Stats updated for all participants (wins/losses/games played)
+  </Accordion>
+  
+  <Accordion title="EXPIRED - Time Ran Out">
+    - 7 days passed without filling all slots
+    - Challenge can no longer be joined or played
+  </Accordion>
+</AccordionGroup>
+
+### Challenge Tabs
+
+The challenges page organizes challenges into three tabs:
+
+- **Mine:** Challenges you've joined that are pending or active
+- **Joinable:** Open challenges you can join
+- **Completed:** Finished or expired challenges
+
+<Note>
+Unlike duels, challenges are **asynchronous** - players don't need to be online simultaneously. Each participant plays the same set of questions at their own convenience.
+</Note>
+
+---
+
+## Game Mode Comparison
+
+| Feature | Single-Player | Duel | Challenge |
+|---------|---------------|------|----------|
+| **Players** | 1 | 2 | 2-8 |
+| **Time per Question** | 10s | 10s | 10s/20s/30s |
+| **Questions** | 10 | 10 | 10 |
+| **Matchmaking** | None | Auto | Manual |
+| **Synchronous** | N/A | Yes | No |
+| **Category Selection** | Yes | Yes | Yes |
+| **Custom Settings** | No | No | Yes |
+| **Expiration** | N/A | N/A | 7 days |
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Question Categories" icon="flag" href="/features/categories">
+    Learn about the different question types
+  </Card>
+  <Card title="Architecture" icon="trophy" href="/architecture">
+    Understand the technical architecture and scoring system
+  </Card>
+</CardGroup>

@@ -1,0 +1,253 @@
+---
+title: "Join Challenge"
+api: "POST /api/challenges/:id/join"
+description: "Join an existing challenge as a participant"
+---
+
+## Authentication
+
+Requires JWT authentication via `Authorization: Bearer <token>` header.
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The unique challenge identifier (CUID)
+</ParamField>
+
+## Request Body
+
+No request body required.
+
+## Response
+
+<ResponseField name="message" type="string">
+  Success message: "Te uniste al desafío"
+</ResponseField>
+
+<ResponseField name="challenge" type="object">
+  The updated challenge object with all participants
+  
+  <ResponseField name="id" type="string">
+    Challenge identifier
+  </ResponseField>
+  
+  <ResponseField name="status" type="string">
+    Challenge status (typically still `PENDING` after joining)
+  </ResponseField>
+  
+  <ResponseField name="categories" type="string[]">
+    Challenge categories
+  </ResponseField>
+  
+  <ResponseField name="maxPlayers" type="number">
+    Maximum player capacity
+  </ResponseField>
+  
+  <ResponseField name="answerTimeSeconds" type="number">
+    Time limit per question
+  </ResponseField>
+  
+  <ResponseField name="creator" type="object">
+    Creator information (id, username)
+  </ResponseField>
+  
+  <ResponseField name="participants" type="object[]">
+    Array of all participants including the newly joined user
+  </ResponseField>
+  
+  <ResponseField name="participantsCount" type="number">
+    Updated participant count
+  </ResponseField>
+  
+  <ResponseField name="isFull" type="boolean">
+    Whether the challenge is now full after this join
+  </ResponseField>
+  
+  <ResponseField name="isUserParticipant" type="boolean">
+    Always `true` for the joining user
+  </ResponseField>
+  
+  <ResponseField name="isJoinable" type="boolean">
+    Always `false` after joining (user already participated)
+  </ResponseField>
+  
+  <ResponseField name="createdAt" type="string">
+    ISO 8601 timestamp
+  </ResponseField>
+  
+  <ResponseField name="expiresAt" type="string">
+    ISO 8601 timestamp
+  </ResponseField>
+  
+  <ResponseField name="completedAt" type="string | null">
+    ISO 8601 timestamp or `null`
+  </ResponseField>
+  
+  <ResponseField name="winnerId" type="string | null">
+    Winner user ID or `null`
+  </ResponseField>
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X POST https://api.geochallenge.com/api/challenges/clx1abc2def3ghi4jkl5/join \
+  -H "Authorization: Bearer <token>"
+```
+
+## Example Response
+
+```json
+{
+  "message": "Te uniste al desafío",
+  "challenge": {
+    "id": "clx1abc2def3ghi4jkl5",
+    "status": "PENDING",
+    "categories": ["FLAG", "CAPITAL"],
+    "maxPlayers": 4,
+    "answerTimeSeconds": 20,
+    "creator": {
+      "id": "clx1user123",
+      "username": "player1"
+    },
+    "participants": [
+      {
+        "userId": "clx1user123",
+        "score": null,
+        "joinedAt": "2026-03-01T12:00:00.000Z",
+        "completedAt": null,
+        "user": {
+          "id": "clx1user123",
+          "username": "player1"
+        }
+      },
+      {
+        "userId": "clx1user456",
+        "score": null,
+        "joinedAt": "2026-03-01T12:05:00.000Z",
+        "completedAt": null,
+        "user": {
+          "id": "clx1user456",
+          "username": "player2"
+        }
+      },
+      {
+        "userId": "clx1currentUser",
+        "score": null,
+        "joinedAt": "2026-03-01T12:10:00.000Z",
+        "completedAt": null,
+        "user": {
+          "id": "clx1currentUser",
+          "username": "currentUser"
+        }
+      }
+    ],
+    "participantsCount": 3,
+    "isFull": false,
+    "isUserParticipant": true,
+    "isJoinable": false,
+    "createdAt": "2026-03-01T12:00:00.000Z",
+    "expiresAt": "2026-03-08T12:00:00.000Z",
+    "completedAt": null,
+    "winnerId": null
+  }
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error message describing why the join failed
+</ResponseField>
+
+### 400 Bad Request
+
+Returned when join validation fails:
+
+**Challenge not found:**
+```json
+{
+  "error": "Desafío no encontrado"
+}
+```
+
+**Challenge not accepting players:**
+```json
+{
+  "error": "Este desafío ya no está disponible para unirse"
+}
+```
+
+Returned when `status` is not `PENDING` (e.g., already `ACCEPTED`, `COMPLETED`, or `EXPIRED`).
+
+**Challenge expired:**
+```json
+{
+  "error": "Este desafío ha expirado"
+}
+```
+
+Returned when `expiresAt < now`. The challenge status is automatically updated to `EXPIRED`.
+
+**Already joined:**
+```json
+{
+  "error": "Ya estás dentro de este desafío"
+}
+```
+
+**Challenge full:**
+```json
+{
+  "error": "El desafío ya completó el cupo de jugadores"
+}
+```
+
+Returned when `participants.length >= maxPlayers`.
+
+### 401 Unauthorized
+
+Returned when the JWT token is missing or invalid.
+
+## Validation Rules
+
+The endpoint performs the following checks in order:
+
+1. **Challenge exists** - Challenge ID must be valid
+2. **Status is PENDING** - Cannot join completed or expired challenges
+3. **Not expired** - `expiresAt` must be in the future
+4. **Not already joined** - User cannot join twice
+5. **Not full** - Participant count must be less than `maxPlayers`
+
+## Challenge Status Transitions
+
+Joining does NOT automatically change the challenge status. The status transitions happen as follows:
+
+- **PENDING → ACCEPTED**: Happens when the first participant requests questions via `GET /api/challenges/:id/questions` (if the challenge has enough players)
+- **PENDING → EXPIRED**: Happens automatically after 7 days if not all players joined
+- **ACCEPTED → COMPLETED**: Happens when the last participant submits their results
+
+## Use Cases
+
+### Basic Join Flow
+
+1. User browses `GET /api/challenges?type=joinable`
+2. User selects a challenge with `isJoinable: true`
+3. User calls `POST /api/challenges/:id/join`
+4. Challenge is added to user's list
+5. User can now play when ready via the questions endpoint
+
+### Full Lobby Detection
+
+After joining, check `isFull` in the response. If `true`, the challenge can potentially start when all players are ready.
+
+### Real-time Updates
+
+Clients should poll or use WebSockets to detect when other players join, so they know when the challenge is ready to play.
+
+## Notes
+
+- The creator is automatically added as a participant when creating the challenge, so they don't need to call this endpoint
+- Participants are ordered by `joinedAt` timestamp (first to join appears first)
+- Once joined, users cannot leave a challenge
+- The `/accept` endpoint exists as an alias to this endpoint for backward compatibility

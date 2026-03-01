@@ -1,0 +1,209 @@
+---
+title: "Login"
+api: "POST /api/auth/login"
+description: "Authenticate user and receive JWT token"
+---
+
+Authenticates a user with email and password. Returns a JWT token and user profile on success.
+
+## Request Body
+
+<ParamField body="email" type="string" required>
+  User's email address
+  - Case-insensitive matching
+  - Automatically trimmed
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password
+  - Must not be empty
+</ParamField>
+
+## Response
+
+<ResponseField name="message" type="string">
+  Success message: "Inicio de sesión exitoso"
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  The authenticated user's profile
+  
+  <ResponseField name="id" type="string">
+    Unique user identifier (CUID)
+  </ResponseField>
+  
+  <ResponseField name="username" type="string">
+    User's username
+  </ResponseField>
+  
+  <ResponseField name="email" type="string">
+    User's email address
+  </ResponseField>
+  
+  <ResponseField name="preferredLanguage" type="string">
+    User's language preference (`es` or `en`)
+  </ResponseField>
+  
+  <ResponseField name="highScore" type="number">
+    User's highest score across all games
+  </ResponseField>
+  
+  <ResponseField name="gamesPlayed" type="number">
+    Total number of games played
+  </ResponseField>
+  
+  <ResponseField name="wins" type="number">
+    Number of games won
+  </ResponseField>
+  
+  <ResponseField name="losses" type="number">
+    Number of games lost
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  JWT authentication token
+  - Include in subsequent requests as `Authorization: Bearer {token}`
+  - Token contains userId, username, and email claims
+</ResponseField>
+
+## Error Responses
+
+### 400 Bad Request - Validation Error
+
+```json
+{
+  "error": "Datos inválidos",
+  "details": [
+    {
+      "code": "invalid_string",
+      "validation": "email",
+      "path": ["email"],
+      "message": "Email inválido"
+    }
+  ]
+}
+```
+
+### 401 Unauthorized - Invalid Credentials
+
+```json
+{
+  "error": "Credenciales inválidas"
+}
+```
+
+This error is returned for both:
+- User not found
+- Incorrect password
+
+(For security, the exact reason is not disclosed)
+
+### 429 Too Many Requests
+
+Rate limiting is applied to prevent brute force attacks:
+
+```json
+{
+  "error": "Too many requests, please try again later"
+}
+```
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "Error interno del servidor"
+}
+```
+
+## Example
+
+<CodeGroup>
+
+```bash curl
+curl -X POST https://api.geochallenge.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "securepass123"
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.geochallenge.com/api/auth/login', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    email: 'user@example.com',
+    password: 'securepass123'
+  })
+});
+
+const data = await response.json();
+const token = data.token;
+
+// Store token for subsequent requests
+localStorage.setItem('authToken', token);
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    'https://api.geochallenge.com/api/auth/login',
+    json={
+        'email': 'user@example.com',
+        'password': 'securepass123'
+    }
+)
+
+data = response.json()
+token = data['token']
+```
+
+</CodeGroup>
+
+### Response
+
+```json
+{
+  "message": "Inicio de sesión exitoso",
+  "user": {
+    "id": "clx9k2j3h0000xyz123abc456",
+    "username": "explorer_2024",
+    "email": "user@example.com",
+    "preferredLanguage": "en",
+    "highScore": 8500,
+    "gamesPlayed": 42,
+    "wins": 28,
+    "losses": 14
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjbHg5azJqM2gwMDAwIiwidXNlcm5hbWUiOiJleHBsb3Jlcl8yMDI0IiwiZW1haWwiOiJ1c2VyQGV4YW1wbGUuY29tIiwiaWF0IjoxNzQzNTAxMDAwLCJleHAiOjE3NDM1ODc0MDB9.signature"
+}
+```
+
+## Validation Rules
+
+| Field | Rule | Error Message |
+|-------|------|---------------|
+| email | Valid email format | "Email inválido" |
+| password | Not empty | "Contraseña requerida" |
+
+## Security Features
+
+- Password comparison uses bcrypt constant-time algorithm
+- Rate limiting prevents brute force attacks
+- Generic error messages prevent user enumeration
+- Email matching is case-insensitive
+- JWT tokens include expiration timestamp
+
+## Notes
+
+- The token expiration time is configured server-side (typically 24 hours)
+- Email lookup is case-insensitive and automatically trimmed
+- Failed login attempts do not distinguish between "user not found" and "wrong password" to prevent user enumeration attacks
+- Store the token securely on the client side (avoid localStorage for sensitive applications; prefer httpOnly cookies)
+- Include the token in the `Authorization` header for all authenticated requests

@@ -1,0 +1,155 @@
+---
+title: Get User Leaderboard Context
+api: GET /api/leaderboard/me
+description: Retrieve the authenticated user's rank with surrounding players for context
+---
+
+## Authentication
+
+Required. Must provide a valid JWT token.
+
+## Query Parameters
+
+No query parameters. The context window (3 players above and below) is configured server-side.
+
+## Response
+
+<ResponseField name="userRank" type="object | null">
+  Current user's rank information. `null` if the user has no score yet.
+  
+  <Expandable title="LeaderboardEntry properties">
+    <ResponseField name="rank" type="number">
+      User's position in the leaderboard (1-indexed)
+    </ResponseField>
+    
+    <ResponseField name="userId" type="string">
+      User's unique identifier
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      User's display name
+    </ResponseField>
+    
+    <ResponseField name="score" type="number">
+      User's highest score
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="neighbors" type="array">
+  Array of nearby players (up to 3 above and 3 below the user)
+  
+  <Expandable title="LeaderboardEntry properties">
+    <ResponseField name="rank" type="number">
+      Player's position in the leaderboard
+    </ResponseField>
+    
+    <ResponseField name="userId" type="string">
+      Player's unique identifier
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      Player's display name
+    </ResponseField>
+    
+    <ResponseField name="score" type="number">
+      Player's highest score
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Informational message (only present when user has no score)
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X GET "https://api.geochallenge.com/api/leaderboard/me" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+## Example Response (User with rank)
+
+```json
+{
+  "userRank": {
+    "rank": 127,
+    "userId": "user-789",
+    "username": "CurrentUser",
+    "score": 7500
+  },
+  "neighbors": [
+    {
+      "rank": 124,
+      "userId": "user-101",
+      "username": "PlayerAbove3",
+      "score": 7650
+    },
+    {
+      "rank": 125,
+      "userId": "user-102",
+      "username": "PlayerAbove2",
+      "score": 7580
+    },
+    {
+      "rank": 126,
+      "userId": "user-103",
+      "username": "PlayerAbove1",
+      "score": 7520
+    },
+    {
+      "rank": 127,
+      "userId": "user-789",
+      "username": "CurrentUser",
+      "score": 7500
+    },
+    {
+      "rank": 128,
+      "userId": "user-104",
+      "username": "PlayerBelow1",
+      "score": 7480
+    },
+    {
+      "rank": 129,
+      "userId": "user-105",
+      "username": "PlayerBelow2",
+      "score": 7450
+    },
+    {
+      "rank": 130,
+      "userId": "user-106",
+      "username": "PlayerBelow3",
+      "score": 7420
+    }
+  ]
+}
+```
+
+## Example Response (User with no score)
+
+```json
+{
+  "message": "Aún no tienes puntaje en el ranking",
+  "userRank": null,
+  "neighbors": []
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error message when the request fails
+</ResponseField>
+
+### 401 Unauthorized
+
+Returned when no valid authentication token is provided.
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "Error interno del servidor"
+}
+```

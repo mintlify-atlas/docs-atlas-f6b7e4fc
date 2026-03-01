@@ -1,0 +1,588 @@
+---
+title: Database Schema
+description: Understanding the PostgreSQL database structure with Prisma
+---
+
+# Database Schema
+
+GeoChallenge uses **PostgreSQL** as the relational database and **Prisma** as the ORM (Object-Relational Mapping) tool.
+
+## Database Overview
+
+- **Provider**: PostgreSQL 14+
+- **ORM**: Prisma 5.10
+- **Migration Tool**: Prisma Migrate
+- **Connection**: Via `DATABASE_URL` environment variable
+
+## Schema Location
+
+The database schema is defined in `backend/prisma/schema.prisma`:
+
+```prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+```
+
+## Data Models
+
+### User
+
+Stores player accounts and statistics.
+
+```prisma
+model User {
+  id                String      @id @default(cuid())
+  username          String      @unique
+  email             String      @unique
+  passwordHash      String
+  preferredLanguage String      @default("es")
+  highScore         Int         @default(0)
+  gamesPlayed       Int         @default(0)
+  wins              Int         @default(0)
+  losses            Int         @default(0)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  // Relationships
+  games                     GameResult[]
+  challengesCreated         Challenge[]            @relation("ChallengeCreator")
+  challengeParticipations   ChallengeParticipant[]
+
+  @@map("users")
+}
+```
+
+**Fields:**
+- `id`: Unique identifier (CUID format)
+- `username`: Display name (unique, indexed)
+- `email`: Login credential (unique, indexed)
+- `passwordHash`: Bcrypt hashed password
+- `preferredLanguage`: UI language (`"es"` or `"en"`)
+- `highScore`: Best score across all games
+- `gamesPlayed`: Total number of games completed
+- `wins`: Number of duel/challenge victories
+- `losses`: Number of defeats
+- `createdAt`: Account creation timestamp
+- `updatedAt`: Last modification timestamp
+
+**Relationships:**
+- One-to-many: `games` (game results)
+- One-to-many: `challengesCreated` (challenges created by this user)
+- One-to-many: `challengeParticipations` (challenges joined)
+
+### Question
+
+Stores trivia questions for all game modes.
+
+```prisma
+model Question {
+  id             String     @id @default(cuid())
+  category       Category
+  questionData   String     // Country/city name or prompt
+  options        String[]   // Multiple choice options
+  correctAnswer  String
+  imageUrl       String?    // Flag or silhouette URL
+  latitude       Float?     // For map questions
+  longitude      Float?     // For map questions
+  continent      String?    // For regional distractors
+  difficulty     Difficulty @default(MEDIUM)
+  createdAt      DateTime   @default(now())
+
+  @@map("questions")
+}
+```
+
+**Fields:**
+- `id`: Unique identifier
+- `category`: Question type (MAP, FLAG, CAPITAL, SILHOUETTE, MIXED)
+- `questionData`: Main data (e.g., country name)
+- `options`: Array of 4 possible answers
+- `correctAnswer`: The correct option
+- `imageUrl`: For FLAG and SILHOUETTE questions
+- `latitude` / `longitude`: For MAP questions
+- `continent`: Used to generate region-specific distractors
+- `difficulty`: EASY, MEDIUM, or HARD
+
+**Example:**
+
+```json
+{
+  "category": "FLAG",
+  "questionData": "Brazil",
+  "options": ["Brazil", "Argentina", "Colombia", "Venezuela"],
+  "correctAnswer": "Brazil",
+  "imageUrl": "https://flagcdn.com/w320/br.png",
+  "continent": "South America",
+  "difficulty": "EASY"
+}
+```
+
+### GameResult
+
+Stores completed game sessions.
+
+```prisma
+model GameResult {
+  id              String    @id @default(cuid())
+  userId          String
+  score           Int
+  correctCount    Int
+  totalQuestions  Int
+  category        Category?
+  gameMode        GameMode  @default(SINGLE)
+  details         Json?     // Answer breakdown
+  createdAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("game_results")
+}
+```
+
+**Fields:**
+- `userId`: Player who completed the game
+- `score`: Total points earned
+- `correctCount`: Number of correct answers
+- `totalQuestions`: Total questions in the game (usually 10)
+- `category`: Question category (null for MIXED)
+- `gameMode`: SINGLE, DUEL, or CHALLENGE
+- `details`: JSON object with per-question results
+
+**Example `details` JSON:**
+
+```json
+[
+  {
+    "questionId": "clx123",
+    "userAnswer": "Brazil",
+    "correctAnswer": "Brazil",
+    "isCorrect": true,
+    "timeSpent": 3.2
+  },
+  // ... more questions
+]
+```
+
+### Challenge
+
+Stores asynchronous multiplayer challenges.
+
+```prisma
+model Challenge {
+  id                String          @id @default(cuid())
+  creatorId         String
+  status            ChallengeStatus @default(PENDING)
+  categories        Category[]
+  maxPlayers        Int
+  answerTimeSeconds Int             @default(20)
+  questionIds       String[]        // For reproducibility
+  winnerId          String?
+  createdAt         DateTime        @default(now())
+  expiresAt         DateTime
+  completedAt       DateTime?
+
+  creator      User                   @relation("ChallengeCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  participants ChallengeParticipant[]
+
+  @@map("challenges")
+}
+```
+
+**Fields:**
+- `creatorId`: User who created the challenge
+- `status`: PENDING, ACCEPTED, COMPLETED, EXPIRED, or DECLINED
+- `categories`: Array of allowed categories
+- `maxPlayers`: Maximum number of participants
+- `answerTimeSeconds`: Time limit per question (default: 20s)
+- `questionIds`: Pre-selected questions for fairness
+- `winnerId`: User with the highest score (set when completed)
+- `expiresAt`: Challenge expiration time
+- `completedAt`: When the challenge ended
+
+### ChallengeParticipant
+
+Tracks player participation in challenges.
+
+```prisma
+model ChallengeParticipant {
+  id           String    @id @default(cuid())
+  challengeId  String
+  userId       String
+  score        Int?
+  correctCount Int?
+  joinedAt     DateTime  @default(now())
+  completedAt  DateTime?
+
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([challengeId, userId])
+  @@map("challenge_participants")
+}
+```
+
+**Fields:**
+- `challengeId`: The challenge being played
+- `userId`: Participating user
+- `score`: Final score (null if not completed)
+- `correctCount`: Number of correct answers
+- `joinedAt`: When the user joined
+- `completedAt`: When the user finished
+
+**Constraint:** `@@unique([challengeId, userId])` prevents duplicate participation.
+
+## Enums
+
+### Category
+
+```prisma
+enum Category {
+  MAP
+  FLAG
+  CAPITAL
+  SILHOUETTE
+  MIXED
+}
+```
+
+- **MAP**: Identify a country by clicking on a map
+- **FLAG**: Identify a country by its flag
+- **CAPITAL**: Identify the capital city of a country
+- **SILHOUETTE**: Identify a country by its outline
+- **MIXED**: Random mix of all categories
+
+### Difficulty
+
+```prisma
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+```
+
+Difficulty levels affect scoring:
+- **EASY**: Common countries (e.g., USA, France, Brazil)
+- **MEDIUM**: Moderately known countries (e.g., Portugal, Thailand)
+- **HARD**: Obscure countries (e.g., Lesotho, Andorra)
+
+### GameMode
+
+```prisma
+enum GameMode {
+  SINGLE
+  DUEL
+  CHALLENGE
+}
+```
+
+- **SINGLE**: Solo game, 10 questions
+- **DUEL**: Real-time 1v1 match
+- **CHALLENGE**: Asynchronous multiplayer
+
+### ChallengeStatus
+
+```prisma
+enum ChallengeStatus {
+  PENDING
+  ACCEPTED
+  COMPLETED
+  EXPIRED
+  DECLINED
+}
+```
+
+## Relationships
+
+### User ↔ GameResult
+
+- **Type**: One-to-Many
+- **Cascade**: Deleting a user deletes all their game results
+
+### User ↔ Challenge
+
+- **Type**: One-to-Many (as creator)
+- **Cascade**: Deleting a user deletes challenges they created
+
+### Challenge ↔ ChallengeParticipant
+
+- **Type**: One-to-Many
+- **Cascade**: Deleting a challenge deletes all participant records
+
+### User ↔ ChallengeParticipant
+
+- **Type**: One-to-Many
+- **Cascade**: Deleting a user deletes their participation records
+
+## Migrations
+
+### Creating a Migration
+
+After modifying `schema.prisma`, create a migration:
+
+```bash
+cd backend
+npm run db:migrate
+```
+
+Prisma will:
+1. Compare schema to current database
+2. Generate SQL migration file in `prisma/migrations/`
+3. Apply migration to the database
+4. Regenerate Prisma Client
+
+### Migration Naming
+
+Use descriptive names:
+
+```bash
+npm run db:migrate -- --name add_user_stats
+```
+
+### Apply Migrations in Production
+
+```bash
+npx prisma migrate deploy
+```
+
+This is run automatically by `npm run start:prod`.
+
+## Prisma Client
+
+### Generating the Client
+
+After schema changes:
+
+```bash
+npm run db:generate
+```
+
+This is run automatically on `npm install` via the `postinstall` script.
+
+### Using Prisma Client
+
+Import the generated client:
+
+```typescript
+import { prisma } from './config/database.js';
+
+// Create a user
+const user = await prisma.user.create({
+  data: {
+    username: 'player1',
+    email: 'player1@example.com',
+    passwordHash: hashedPassword,
+  },
+});
+
+// Find a user
+const user = await prisma.user.findUnique({
+  where: { email: 'player1@example.com' },
+});
+
+// Update user stats
+await prisma.user.update({
+  where: { id: userId },
+  data: {
+    gamesPlayed: { increment: 1 },
+    highScore: Math.max(currentHighScore, newScore),
+  },
+});
+
+// Fetch leaderboard
+const topPlayers = await prisma.user.findMany({
+  orderBy: { highScore: 'desc' },
+  take: 100,
+  select: {
+    id: true,
+    username: true,
+    highScore: true,
+    gamesPlayed: true,
+  },
+});
+```
+
+### Type Safety
+
+Prisma Client is fully typed:
+
+```typescript
+import { User, Category, Difficulty } from '@prisma/client';
+
+const user: User = await prisma.user.findUnique({ ... });
+const category: Category = 'FLAG';
+const difficulty: Difficulty = 'HARD';
+```
+
+## Database Seeding
+
+The `src/seed.ts` script populates the database with sample questions:
+
+```bash
+npm run seed
+```
+
+**Seed data includes:**
+- 50+ FLAG questions
+- 50+ CAPITAL questions
+- 30+ MAP questions
+- 30+ SILHOUETTE questions
+
+All questions have:
+- 4 multiple choice options
+- Correct answer
+- Difficulty level
+- Metadata (imageUrl, coordinates, continent)
+
+## Querying Best Practices
+
+### Use `select` to Limit Fields
+
+```typescript
+// ✅ Good - Only fetch needed fields
+const users = await prisma.user.findMany({
+  select: { id: true, username: true, highScore: true },
+});
+
+// ❌ Avoid - Fetches all fields including passwordHash
+const users = await prisma.user.findMany();
+```
+
+### Use `include` for Relations
+
+```typescript
+const challenge = await prisma.challenge.findUnique({
+  where: { id: challengeId },
+  include: {
+    creator: { select: { id: true, username: true } },
+    participants: { include: { user: true } },
+  },
+});
+```
+
+### Use Transactions for Atomicity
+
+```typescript
+await prisma.$transaction(async (tx) => {
+  // Update user stats
+  await tx.user.update({
+    where: { id: userId },
+    data: { gamesPlayed: { increment: 1 } },
+  });
+  
+  // Create game result
+  await tx.gameResult.create({
+    data: { userId, score, correctCount, totalQuestions },
+  });
+});
+```
+
+## Indexes
+
+The schema includes automatic indexes:
+
+- `@unique` fields are indexed (e.g., `username`, `email`)
+- `@id` fields are primary keys
+- Foreign keys have indexes
+
+### Custom Indexes
+
+For performance-critical queries, add indexes:
+
+```prisma
+model GameResult {
+  // ...
+  
+  @@index([userId, createdAt])
+  @@index([gameMode, score])
+}
+```
+
+## Backup and Restore
+
+### Backup Database
+
+```bash
+pg_dump -U postgres geochallenge > backup.sql
+```
+
+### Restore Database
+
+```bash
+psql -U postgres geochallenge < backup.sql
+```
+
+## Common Queries
+
+### Get User Rank
+
+```typescript
+const userRank = await prisma.$queryRaw<{ rank: number }[]>`
+  SELECT COUNT(*) + 1 AS rank
+  FROM users
+  WHERE "highScore" > (
+    SELECT "highScore" FROM users WHERE id = ${userId}
+  )
+`;
+```
+
+### Get Questions by Difficulty and Category
+
+```typescript
+const questions = await prisma.question.findMany({
+  where: {
+    category: 'FLAG',
+    difficulty: 'HARD',
+  },
+  take: 10,
+  orderBy: { createdAt: 'desc' },
+});
+```
+
+### Get Challenge Leaderboard
+
+```typescript
+const leaderboard = await prisma.challengeParticipant.findMany({
+  where: { challengeId },
+  orderBy: { score: 'desc' },
+  include: {
+    user: { select: { id: true, username: true } },
+  },
+});
+```
+
+## Troubleshooting
+
+### "Prisma Client not initialized"
+
+```bash
+cd backend
+npm run db:generate
+```
+
+### "Database connection failed"
+
+Check:
+- PostgreSQL is running: `pg_isready`
+- DATABASE_URL is correct in `.env`
+- Database exists: `psql -l | grep geochallenge`
+
+### "Migration failed"
+
+Reset the database (⚠️ DELETES ALL DATA):
+
+```bash
+npx prisma migrate reset
+```
+
+## Next Steps
+
+- [Backend Architecture](/development/backend) - Learn how Prisma is used in the API
+- [Frontend Architecture](/development/frontend) - See how the client consumes database data
+- [Local Setup](/development/setup) - Complete development environment guide

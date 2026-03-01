@@ -1,0 +1,465 @@
+---
+title: Friend Challenges
+description: Create and join asynchronous multiplayer geography challenges
+---
+
+Challenges allow you to create custom multiplayer competitions that friends can join and play at their own pace.
+
+## Overview
+
+Unlike duels, challenges are **asynchronous** - participants don't need to be online at the same time. Create a challenge, share it with friends, and compete for the highest score.
+
+<Card title="Key Features" icon="trophy">
+  - **2-8 players** per challenge
+  - **Customizable time limits** (10, 20, or 30 seconds per question)
+  - **Category selection** (single or multiple categories)
+  - **7-day expiration** window
+  - **Identical questions** for all participants
+  - **Automatic winner determination**
+</Card>
+
+---
+
+## Creating a Challenge
+
+### Configuration Options
+
+```typescript frontend/src/pages/ChallengesPage.tsx
+const categories = ['MIXED', 'FLAG', 'CAPITAL', 'MAP', 'SILHOUETTE'];
+const playerOptions = [2, 3, 4, 5, 6, 7, 8];
+const timeOptions = [10, 20, 30]; // seconds per question
+
+const handleCreate = async (e: React.FormEvent) => {
+  e.preventDefault();
+  await api.post('/challenges', {
+    categories: createCategories,
+    maxPlayers: createMaxPlayers,
+    answerTimeSeconds: createTime,
+  });
+};
+```
+
+### Backend Validation
+
+```typescript backend/src/services/challenge.service.ts
+const CHALLENGE_EXPIRY_DAYS = 7;
+const QUESTIONS_PER_CHALLENGE = 10;
+const ALLOWED_TIME_SECONDS = [10, 20, 30] as const;
+
+async createChallenge(
+  creatorId: string,
+  categories: Category[] | undefined,
+  maxPlayers: number,
+  answerTimeSeconds: number
+) {
+  if (maxPlayers < 2 || maxPlayers > 8) {
+    throw new Error('El desafío debe ser para entre 2 y 8 personas');
+  }
+
+  if (!ALLOWED_TIME_SECONDS.includes(answerTimeSeconds as (typeof ALLOWED_TIME_SECONDS)[number])) {
+    throw new Error('El tiempo por pregunta debe ser 10, 20 o 30 segundos');
+  }
+
+  const selectedCategories: Category[] = categories?.length ? categories : ['MIXED'];
+  const whereClause = selectedCategories.includes('MIXED')
+    ? {}
+    : { category: { in: selectedCategories } };
+
+  const questions = await prisma.question.findMany({ where: whereClause, take: 200 });
+
+  if (questions.length < QUESTIONS_PER_CHALLENGE) {
+    throw new Error('No hay suficientes preguntas para las categorías seleccionadas');
+  }
+
+  const shuffled = questions.sort(() => Math.random() - 0.5);
+  const selectedQuestions = shuffled.slice(0, QUESTIONS_PER_CHALLENGE);
+  const questionIds = selectedQuestions.map((q) => q.id);
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + CHALLENGE_EXPIRY_DAYS);
+
+  const challenge = await prisma.challenge.create({
+    data: {
+      creatorId,
+      categories: selectedCategories,
+      maxPlayers,
+      answerTimeSeconds,
+      questionIds,
+      expiresAt,
+      participants: {
+        create: { userId: creatorId },
+      },
+    },
+  });
+
+  return challenge;
+}
+```
+
+<Steps>
+  <Step title="Select Categories">
+    Choose one or more categories (FLAG, CAPITAL, MAP, SILHOUETTE, or MIXED)
+  </Step>
+  <Step title="Set Player Limit">
+    Choose between 2-8 players
+  </Step>
+  <Step title="Choose Time Limit">
+    Set 10, 20, or 30 seconds per question
+  </Step>
+  <Step title="Create Challenge">
+    Challenge is created with you as the first participant
+  </Step>
+</Steps>
+
+---
+
+## Joining Challenges
+
+### Joinable Criteria
+
+Challenges appear in the "Joinable" tab when:
+
+```typescript backend/src/services/challenge.service.ts
+private toChallengeView(challenge: ChallengeListItem, userId: string) {
+  const participantsCount = challenge.participants.length;
+  const isUserParticipant = challenge.participants.some((p) => p.userId === userId);
+
+  return {
+    ...challenge,
+    participantsCount,
+    isFull: participantsCount >= challenge.maxPlayers,
+    isUserParticipant,
+    isJoinable:
+      challenge.status === 'PENDING' &&
+      !isUserParticipant &&
+      challenge.expiresAt > new Date() &&
+      participantsCount < challenge.maxPlayers,
+  };
+}
+```
+
+<Card title="Join Requirements" icon="users">
+  - Status must be **PENDING**
+  - Not expired (within 7 days of creation)
+  - You are not already a participant
+  - Player slots still available
+</Card>
+
+### Join Process
+
+```typescript backend/src/services/challenge.service.ts
+async joinChallenge(challengeId: string, userId: string) {
+  const challenge = await prisma.challenge.findUnique({
+    where: { id: challengeId },
+    include: { participants: true },
+  });
+
+  if (!challenge) {
+    throw new Error('Desafío no encontrado');
+  }
+
+  if (challenge.status !== 'PENDING') {
+    throw new Error('Este desafío ya no está disponible para unirse');
+  }
+
+  if (challenge.expiresAt < new Date()) {
+    await prisma.challenge.update({ where: { id: challengeId }, data: { status: 'EXPIRED' } });
+    throw new Error('Este desafío ha expirado');
+  }
+
+  if (challenge.participants.some((p) => p.userId === userId)) {
+    throw new Error('Ya estás dentro de este desafío');
+  }
+
+  if (challenge.participants.length >= challenge.maxPlayers) {
+    throw new Error('El desafío ya completó el cupo de jugadores');
+  }
+
+  const joined = await prisma.challenge.update({
+    where: { id: challengeId },
+    data: {
+      participants: {
+        create: { userId },
+      },
+    },
+  });
+
+  return joined;
+}
+```
+
+---
+
+## Challenge Status Lifecycle
+
+```typescript schema.prisma
+enum ChallengeStatus {
+  PENDING
+  ACCEPTED
+  COMPLETED
+  EXPIRED
+  DECLINED
+}
+```
+
+<AccordionGroup>
+  <Accordion title="PENDING" icon="clock">
+    **Initial state when challenge is created**
+    
+    - Waiting for players to join
+    - Creator is automatically a participant
+    - Visible in "Joinable" tab for other users
+    - Transitions to ACCEPTED when all slots are filled
+    - Transitions to EXPIRED after 7 days if not filled
+  </Accordion>
+  
+  <Accordion title="ACCEPTED" icon="check">
+    **All player slots are filled**
+    
+    - Participants can now play the challenge
+    - Questions are retrieved from the stored `questionIds`
+    - Each player plays independently
+    - Status check when retrieving questions:
+    
+    ```typescript backend/src/services/challenge.service.ts
+    if (challenge.status === 'PENDING') {
+      if (challenge.participants.length < challenge.maxPlayers) {
+        throw new Error('El desafío aún no completó el cupo de jugadores');
+      }
+
+      await prisma.challenge.update({
+        where: { id: challengeId },
+        data: { status: 'ACCEPTED' },
+      });
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="COMPLETED" icon="trophy">
+    **All participants have submitted scores**
+    
+    - Winner is determined by highest score
+    - Ties result in `winnerId = null`
+    - User stats updated (wins, losses, games played, high score)
+    - Visible in "Completed" tab
+    
+    ```typescript backend/src/services/challenge.service.ts
+    const everyonePlayed = updatedChallenge.participants.every((p) => p.score !== null);
+    if (everyonePlayed) {
+      const sorted = [...updatedChallenge.participants].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+      const topScore = sorted[0]?.score ?? 0;
+      const tied = sorted.filter((p) => p.score === topScore);
+      const winnerId = tied.length === 1 ? tied[0].userId : null;
+
+      await prisma.challenge.update({
+        where: { id: challengeId },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          winnerId,
+        },
+      });
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="EXPIRED" icon="x">
+    **7 days passed without filling all slots**
+    
+    - Challenge can no longer be joined
+    - Cannot be played
+    - Visible in "Completed" tab
+    - Auto-updated on fetch:
+    
+    ```typescript backend/src/services/challenge.service.ts
+    const now = new Date();
+    await prisma.challenge.updateMany({
+      where: {
+        status: 'PENDING',
+        expiresAt: { lt: now },
+      },
+      data: { status: 'EXPIRED' },
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Playing a Challenge
+
+### Retrieving Questions
+
+```typescript backend/src/services/challenge.service.ts
+async getChallengeQuestions(challengeId: string, userId: string) {
+  const challenge = await prisma.challenge.findUnique({
+    where: { id: challengeId },
+    include: { participants: true },
+  });
+
+  if (!challenge.participants.some((p) => p.userId === userId)) {
+    throw new Error('Debes unirte al desafío para jugar');
+  }
+
+  const participant = challenge.participants.find((p) => p.userId === userId);
+  const alreadyPlayed = participant?.score !== null && participant?.score !== undefined;
+
+  const questions = await prisma.question.findMany({ where: { id: { in: challenge.questionIds } } });
+  const orderedQuestions = challenge.questionIds
+    .map((id) => questions.find((q) => q.id === id))
+    .filter(Boolean);
+
+  return {
+    questions: orderedQuestions,
+    alreadyPlayed,
+    answerTimeSeconds: challenge.answerTimeSeconds,
+    challenge,
+  };
+}
+```
+
+### Submitting Results
+
+```typescript backend/src/services/challenge.service.ts
+async submitChallengeResult(
+  challengeId: string,
+  userId: string,
+  score: number,
+  correctCount: number
+) {
+  const participant = challenge.participants.find((p) => p.userId === userId);
+
+  if (!participant) {
+    throw new Error('No participas en este desafío');
+  }
+
+  if (participant.score !== null) {
+    throw new Error('Ya has jugado este desafío');
+  }
+
+  await prisma.challengeParticipant.update({
+    where: { id: participant.id },
+    data: {
+      score,
+      correctCount,
+      completedAt: new Date(),
+    },
+  });
+
+  // Check if everyone has played and update challenge status
+  const everyonePlayed = updatedChallenge.participants.every((p) => p.score !== null);
+  if (everyonePlayed) {
+    // ... determine winner and mark as COMPLETED
+  }
+}
+```
+
+---
+
+## Database Schema
+
+```typescript schema.prisma
+model Challenge {
+  id              String          @id @default(cuid())
+  creatorId       String
+  status          ChallengeStatus @default(PENDING)
+  categories      Category[]
+  maxPlayers      Int
+  answerTimeSeconds Int          @default(20)
+  questionIds     String[]        // IDs de preguntas para reproducibilidad
+  winnerId        String?
+  createdAt       DateTime        @default(now())
+  expiresAt       DateTime
+  completedAt     DateTime?
+
+  creator User @relation("ChallengeCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  participants ChallengeParticipant[]
+}
+
+model ChallengeParticipant {
+  id          String   @id @default(cuid())
+  challengeId String
+  userId      String
+  score       Int?
+  correctCount Int?
+  joinedAt    DateTime @default(now())
+  completedAt DateTime?
+
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([challengeId, userId])
+}
+```
+
+<Note>
+The `questionIds` field stores the exact question IDs used in the challenge, ensuring all participants answer the same questions in the same order.
+</Note>
+
+---
+
+## Challenge Tabs
+
+```typescript frontend/src/pages/ChallengesPage.tsx
+type TabType = 'mine' | 'joinable' | 'completed';
+
+const filteredChallenges = useMemo(() => challenges.filter((c) => {
+  if (activeTab === 'mine') return c.isUserParticipant && c.status !== 'COMPLETED' && c.status !== 'EXPIRED';
+  if (activeTab === 'joinable') return c.isJoinable;
+  return c.status === 'COMPLETED' || c.status === 'EXPIRED';
+}), [activeTab, challenges]);
+```
+
+<CardGroup cols={3}>
+  <Card title="Mine" icon="user">
+    Challenges you've joined that are pending or active
+  </Card>
+  <Card title="Joinable" icon="door-open">
+    Open challenges you can join
+  </Card>
+  <Card title="Completed" icon="check-circle">
+    Finished or expired challenges
+  </Card>
+</CardGroup>
+
+---
+
+## Stats Update on Completion
+
+```typescript backend/src/services/challenge.service.ts
+await Promise.all(
+  updatedChallenge.participants.map(async (p) => {
+    const isWinner = winnerId === p.userId;
+    const isLoss = winnerId !== null && winnerId !== p.userId;
+    const userHighScore = await this.getUserHighScore(p.userId);
+    await prisma.user.update({
+      where: { id: p.userId },
+      data: {
+        gamesPlayed: { increment: 1 },
+        wins: isWinner ? { increment: 1 } : undefined,
+        losses: isLoss ? { increment: 1 } : undefined,
+        highScore: (p.score ?? 0) > userHighScore ? (p.score ?? 0) : undefined,
+      },
+    });
+  })
+);
+```
+
+When a challenge completes:
+- All participants get `gamesPlayed` incremented
+- Winner gets `wins` incremented
+- Losers get `losses` incremented (ties don't count as losses)
+- `highScore` updated if participant beat their previous record
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Duels" icon="swords" href="/features/duels">
+    Real-time 1v1 competitive mode
+  </Card>
+  <Card title="Game Modes" icon="gamepad" href="/features/game-modes">
+    Overview of all game modes
+  </Card>
+</CardGroup>

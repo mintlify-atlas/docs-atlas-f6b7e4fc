@@ -1,0 +1,202 @@
+---
+title: Frontend Deployment to GitHub Pages
+description: Deploy the GeoChallenge frontend to GitHub Pages with automated CI/CD
+---
+
+## Overview
+
+The GeoChallenge frontend is automatically deployed to GitHub Pages when changes are pushed to the `main` branch. The deployment includes a quality gate to prevent broken builds from reaching production.
+
+## Deployment Workflow
+
+The deployment is handled by the GitHub Actions workflow defined in `.github/workflows/deploy-frontend-pages.yml`.
+
+### Triggers
+
+Deployment runs automatically on:
+
+- **Push to `main` branch** with changes in:
+  - `frontend/**` (any frontend code)
+  - `.github/workflows/deploy-frontend-pages.yml` (workflow changes)
+  - `.github/workflows/frontend-quality.yml` (quality pipeline changes)
+- **Manual trigger** via `workflow_dispatch`
+
+### Quality Gate
+
+Before deployment, the pipeline runs:
+
+<Steps>
+  <Step title="Lint">
+    Runs ESLint with TypeScript rules to catch code quality issues
+    ```bash
+    npm run lint
+    ```
+  </Step>
+  <Step title="Tests">
+    Executes all unit tests with Vitest
+    ```bash
+    npm run test
+    ```
+  </Step>
+  <Step title="Build">
+    Compiles TypeScript and builds production bundle with Vite
+    ```bash
+    npm run build
+    ```
+  </Step>
+</Steps>
+
+The combined quality pipeline runs as:
+
+```bash
+npm run ci:quality
+```
+
+<Warning>
+  If any quality check fails (lint, tests, or build), the deployment is **blocked** and will not publish to GitHub Pages.
+</Warning>
+
+## Local Quality Verification
+
+Before pushing to `main`, validate locally:
+
+```bash
+cd frontend
+npm run ci:quality
+```
+
+This runs the same checks as the CI pipeline.
+
+## Base Path Configuration
+
+GitHub Pages serves repos at `/<repository-name>/`. The build automatically configures the base path:
+
+```yaml
+env:
+  VITE_BASE_PATH: /${{ github.event.repository.name }}/
+```
+
+This is handled in `vite.config.ts`:
+
+```typescript
+export default defineConfig({
+  base: process.env.VITE_BASE_PATH ?? '/',
+  // ...
+});
+```
+
+## Deployment Steps
+
+The workflow executes in two jobs:
+
+### 1. Quality Gate Job
+
+```yaml
+quality-gate:
+  runs-on: ubuntu-latest
+  steps:
+    - Checkout code
+    - Setup Node.js 20
+    - Install dependencies (npm ci)
+    - Run quality pipeline (lint + test + build)
+    - Upload build artifact
+```
+
+### 2. Deploy Job
+
+```yaml
+deploy:
+  needs: quality-gate
+  runs-on: ubuntu-latest
+  steps:
+    - Configure GitHub Pages
+    - Deploy artifact to Pages
+```
+
+<Warning>
+  The workflow uses `concurrency: github-pages` with `cancel-in-progress: true` to prevent concurrent deployments and avoid race conditions.
+</Warning>
+
+## Required Permissions
+
+The workflow requires these GitHub permissions:
+
+```yaml
+permissions:
+  contents: read    # Read repository code
+  pages: write      # Deploy to GitHub Pages
+  id-token: write   # Authenticate with Pages
+```
+
+## Deployment URL
+
+After successful deployment, your site will be available at:
+
+```
+https://<username>.github.io/<repository-name>/
+```
+
+The deployment URL is available in the workflow output:
+
+```yaml
+environment:
+  name: github-pages
+  url: ${{ steps.deployment.outputs.page_url }}
+```
+
+## Troubleshooting
+
+### Deployment Failed
+
+1. Check the **Frontend quality gate** job in GitHub Actions
+2. Look for lint errors, test failures, or build errors
+3. Run `npm run ci:quality` locally to reproduce the issue
+4. Fix the issue and push again
+
+### 404 on Assets
+
+If CSS/JS files return 404:
+
+1. Verify `VITE_BASE_PATH` is set correctly in the workflow
+2. Check that `vite.config.ts` uses `process.env.VITE_BASE_PATH`
+3. Ensure all asset references are relative
+
+### Routing Issues
+
+If client-side routing doesn't work:
+
+1. GitHub Pages rewrites are configured via `routes` in the workflow
+2. The app uses React Router with proper routing setup
+3. Check that `index.html` is served for all routes
+
+## Rollback
+
+To rollback a deployment:
+
+1. Revert the problematic commit on `main`
+2. Push the revert
+3. The workflow will automatically deploy the previous version
+
+Or manually trigger a previous workflow run:
+
+```bash
+gh workflow run deploy-frontend-pages.yml
+```
+
+## Deployment Metrics
+
+- **Build time**: ~2-3 minutes
+- **Quality checks**: ~1-2 minutes
+- **Deployment**: ~30 seconds
+- **Total time**: ~3-5 minutes from push to live
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Backend Hosting" icon="server" href="./backend-hosting">
+    Deploy the backend API to Render
+  </Card>
+  <Card title="Environment Variables" icon="key" href="./environment-variables">
+    Configure secrets and environment variables
+  </Card>
+</CardGroup>

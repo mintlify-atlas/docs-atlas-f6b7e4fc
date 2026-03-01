@@ -1,0 +1,331 @@
+---
+title: Question Categories
+description: Learn about the different types of geography questions in GeoChallenge
+---
+
+GeoChallenge features five distinct question categories, each testing different aspects of geography knowledge.
+
+## Category Types
+
+### Flag Recognition
+
+Identify countries by their flags.
+
+<Card title="Question Format" icon="flag">
+  **Display:** Country flag image
+  
+  **Question:** "¿A qué país pertenece esta bandera?"
+  
+  **Answer Type:** Multiple choice (4 options)
+  
+  **Time Limit:** 10 seconds
+</Card>
+
+#### Implementation
+
+```typescript backend/src/services/game.service.ts
+function generateQuestionText(question: any): string {
+  switch (question.category) {
+    case Category.FLAG:
+      return `¿A qué país pertenece esta bandera?`;
+    // ...
+  }
+}
+```
+
+Flags are displayed using the `imageUrl` field from the question database:
+
+```typescript schema.prisma
+model Question {
+  id             String   @id @default(cuid())
+  category       Category
+  questionData   String   // Country name
+  options        String[] // 4 country options
+  correctAnswer  String   // Correct country
+  imageUrl       String?  // Flag image URL
+  // ...
+}
+```
+
+---
+
+### Capital Cities
+
+Test knowledge of world capitals with bidirectional questions.
+
+<Card title="Question Format" icon="building">
+  **Display:** Text only (no images)
+  
+  **Question Variants:**
+  - "¿Cuál es la capital de [Country]?"
+  - "[Capital] es la capital de..."
+  
+  **Answer Type:** Multiple choice (4 options)
+  
+  **Time Limit:** 10 seconds
+</Card>
+
+#### Dynamic Question Generation
+
+```typescript backend/src/services/game.service.ts
+case Category.CAPITAL:
+  if (Math.random() > 0.5) {
+    return `¿Cuál es la capital de ${question.questionData}?`;
+  } else {
+    return `${question.correctAnswer} es la capital de...`;
+  }
+```
+
+This creates variety by randomly switching between:
+- **Country → Capital:** "What is the capital of France?" → "Paris"
+- **Capital → Country:** "Paris is the capital of..." → "France"
+
+---
+
+### Map Location
+
+Click on an interactive map to identify the location of countries or cities.
+
+<Card title="Question Format" icon="map">
+  **Display:** Interactive world map
+  
+  **Question:** "¿Dónde se encuentra [Location]?"
+  
+  **Answer Type:** Click coordinates on map
+  
+  **Time Limit:** 10 seconds
+</Card>
+
+#### Scoring by Distance
+
+Map questions use a distance-based scoring system:
+
+<CodeGroup>
+```typescript backend/src/utils/scoring.ts
+const MAP_MAX_DISTANCE_KM = 2000;
+
+export function calculateMapScore(
+  distanceKm: number,
+  timeRemaining: number,
+  maxDistanceKm: number = MAP_MAX_DISTANCE_KM
+): number {
+  if (distanceKm >= maxDistanceKm) return 0;
+
+  const clampedDistance = clamp(distanceKm, 0, maxDistanceKm);
+  const accuracyFactor = 1 - clampedDistance / maxDistanceKm;
+
+  const accuracyPoints = Math.round(config.game.basePoints * accuracyFactor);
+  const timePoints = Math.round(calculateTimeBonus(timeRemaining) * accuracyFactor);
+
+  return accuracyPoints + timePoints;
+}
+```
+
+```typescript backend/src/services/game.service.ts
+const MAP_CORRECT_DISTANCE_KM = 500;
+
+if (question.category === Category.MAP && userCoords && question.latitude && question.longitude) {
+  // Calculate haversine distance
+  distance = haversineDistance(
+    userCoords.lat,
+    userCoords.lng,
+    question.latitude,
+    question.longitude
+  );
+  points = calculateMapScore(distance, timeRemaining);
+  isCorrect = distance < MAP_CORRECT_DISTANCE_KM;
+}
+```
+</CodeGroup>
+
+#### Map Scoring Rules
+
+<Steps>
+  <Step title="Perfect Click (0 km)">
+    **150 points** (100 base + 50 time bonus)
+  </Step>
+  <Step title="Close (< 500 km)">
+    Marked as **correct**, score based on accuracy
+  </Step>
+  <Step title="Far (500-2000 km)">
+    Partial points, decreasing linearly with distance
+  </Step>
+  <Step title="Too Far (> 2000 km)">
+    **0 points**
+  </Step>
+</Steps>
+
+#### Map Question Data
+
+```typescript schema.prisma
+model Question {
+  // ...
+  latitude       Float?   // Target location latitude
+  longitude      Float?   // Target location longitude
+  // ...
+}
+```
+
+Map questions require `latitude` and `longitude` coordinates for validation.
+
+---
+
+### Country Silhouettes
+
+Recognize countries by their geographic outlines.
+
+<Card title="Question Format" icon="shapes">
+  **Display:** Country silhouette image
+  
+  **Question:** "¿Qué país representa esta silueta?"
+  
+  **Answer Type:** Multiple choice (4 options)
+  
+  **Time Limit:** 10 seconds
+</Card>
+
+```typescript backend/src/services/game.service.ts
+case Category.SILHOUETTE:
+  return `¿Qué país representa esta silueta?`;
+```
+
+---
+
+### Mixed Category
+
+A blend of all question types for varied gameplay.
+
+<Card title="Question Format" icon="shuffle">
+  **Display:** Varies by question
+  
+  **Question Types:** Random mix of FLAG, CAPITAL, MAP, and SILHOUETTE
+  
+  **Selection:** Pulls from all categories equally
+  
+  **Time Limit:** 10 seconds
+</Card>
+
+#### Mixed Category Logic
+
+```typescript backend/src/services/game.service.ts
+// If MIXED category, blend from all categories
+if (category === Category.MIXED || !category) {
+  const categories = [Category.FLAG, Category.CAPITAL, Category.MAP, Category.SILHOUETTE];
+  const mixedQuestions = [];
+  for (const cat of categories) {
+    const catQuestions = await prisma.question.findMany({
+      where: {
+        category: cat,
+        id: { notIn: excludeIds },
+      },
+    });
+    mixedQuestions.push(...catQuestions);
+  }
+  questions = mixedQuestions;
+}
+
+// Randomly select from the mixed pool
+const selectedQuestions = selectRandom(questions, count);
+```
+
+---
+
+## Category Enum
+
+```typescript schema.prisma
+enum Category {
+  MAP
+  FLAG
+  CAPITAL
+  SILHOUETTE
+  MIXED
+}
+```
+
+All categories are defined in the Prisma schema and used throughout the application.
+
+---
+
+## Difficulty Levels
+
+Questions can have difficulty ratings (currently informational):
+
+```typescript schema.prisma
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model Question {
+  // ...
+  difficulty     Difficulty @default(MEDIUM)
+  // ...
+}
+```
+
+<Note>
+Difficulty levels are stored but not currently used for scoring adjustments. All questions within a category are worth the same base points.
+</Note>
+
+---
+
+## Question Structure
+
+```typescript backend/src/services/game.service.ts
+export interface GameQuestion {
+  id: string;
+  category: Category;
+  questionText: string;        // Generated based on category
+  options: string[];           // Shuffled answer options
+  correctAnswer: string;
+  difficulty?: string;
+  questionData?: string;       // Country/city name
+  imageUrl?: string;          // For FLAG and SILHOUETTE
+  latitude?: number;          // For MAP only
+  longitude?: number;         // For MAP only
+}
+```
+
+### Option Shuffling
+
+Answer options are randomized for each question to prevent pattern memorization:
+
+```typescript backend/src/utils/scoring.ts
+export function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+```
+
+---
+
+## Category Selection UI
+
+Users select categories through the frontend:
+
+```typescript frontend/src/pages/GamePage.tsx
+const [searchParams] = useSearchParams();
+const category = searchParams.get('category') || 'MIXED';
+
+await startGame(category as any);
+```
+
+Categories are passed via URL parameters and used to filter questions.
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Game Modes" icon="gamepad" href="/features/game-modes">
+    Explore different ways to play
+  </Card>
+  <Card title="Architecture" icon="calculator" href="/architecture">
+    Learn about the technical architecture and scoring
+  </Card>
+</CardGroup>

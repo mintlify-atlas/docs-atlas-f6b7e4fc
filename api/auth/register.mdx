@@ -1,0 +1,219 @@
+---
+title: "Register"
+api: "POST /api/auth/register"
+description: "Register a new user account"
+---
+
+Registers a new user with username, email, and password. Returns a JWT token for immediate authentication.
+
+## Request Body
+
+<ParamField body="username" type="string" required>
+  Username for the account
+  - Must be 3-20 characters
+  - Only letters, numbers, and underscores allowed
+  - Case-insensitive and trimmed automatically
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  User's email address
+  - Must be a valid email format
+  - Case-insensitive and trimmed automatically
+  - Must be unique across the platform
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password
+  - Must be 6-100 characters
+  - Hashed with bcrypt (cost factor 12)
+</ParamField>
+
+<ParamField body="preferredLanguage" type="string" default="es">
+  User's preferred language for the interface
+  - Allowed values: `es`, `en`
+</ParamField>
+
+## Response
+
+<ResponseField name="message" type="string">
+  Success message: "Usuario registrado exitosamente"
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  The newly created user object
+  
+  <ResponseField name="id" type="string">
+    Unique user identifier (CUID)
+  </ResponseField>
+  
+  <ResponseField name="username" type="string">
+    Normalized username
+  </ResponseField>
+  
+  <ResponseField name="email" type="string">
+    Normalized email address
+  </ResponseField>
+  
+  <ResponseField name="preferredLanguage" type="string">
+    User's language preference
+  </ResponseField>
+  
+  <ResponseField name="highScore" type="number">
+    Initial high score (0)
+  </ResponseField>
+  
+  <ResponseField name="gamesPlayed" type="number">
+    Initial games played count (0)
+  </ResponseField>
+  
+  <ResponseField name="createdAt" type="string">
+    ISO 8601 timestamp of account creation
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  JWT authentication token
+  - Use in `Authorization: Bearer {token}` header
+  - Token expiration is configured server-side
+</ResponseField>
+
+## Error Responses
+
+### 400 Bad Request - Validation Error
+
+```json
+{
+  "error": "Datos inválidos",
+  "details": [
+    {
+      "code": "too_small",
+      "minimum": 3,
+      "path": ["username"],
+      "message": "El nombre de usuario debe tener al menos 3 caracteres"
+    }
+  ]
+}
+```
+
+### 400 Bad Request - Duplicate User
+
+```json
+{
+  "error": "El email ya está registrado"
+}
+```
+
+or
+
+```json
+{
+  "error": "El nombre de usuario ya está registrado"
+}
+```
+
+### 429 Too Many Requests
+
+Rate limiting is applied to this endpoint. If exceeded:
+
+```json
+{
+  "error": "Too many requests, please try again later"
+}
+```
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "Error interno del servidor"
+}
+```
+
+## Example
+
+<CodeGroup>
+
+```bash curl
+curl -X POST https://api.geochallenge.com/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "explorer_2024",
+    "email": "user@example.com",
+    "password": "securepass123",
+    "preferredLanguage": "en"
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.geochallenge.com/api/auth/register', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    username: 'explorer_2024',
+    email: 'user@example.com',
+    password: 'securepass123',
+    preferredLanguage: 'en'
+  })
+});
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    'https://api.geochallenge.com/api/auth/register',
+    json={
+        'username': 'explorer_2024',
+        'email': 'user@example.com',
+        'password': 'securepass123',
+        'preferredLanguage': 'en'
+    }
+)
+
+data = response.json()
+```
+
+</CodeGroup>
+
+### Response
+
+```json
+{
+  "message": "Usuario registrado exitosamente",
+  "user": {
+    "id": "clx9k2j3h0000xyz123abc456",
+    "username": "explorer_2024",
+    "email": "user@example.com",
+    "preferredLanguage": "en",
+    "highScore": 0,
+    "gamesPlayed": 0,
+    "createdAt": "2026-03-01T10:30:00.000Z"
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+## Validation Rules
+
+| Field | Rule | Error Message |
+|-------|------|---------------|
+| username | Min 3 characters | "El nombre de usuario debe tener al menos 3 caracteres" |
+| username | Max 20 characters | "El nombre de usuario no puede exceder 20 caracteres" |
+| username | Pattern `/^[a-zA-Z0-9_]+$/` | "Solo letras, números y guiones bajos" |
+| email | Valid email format | "Email inválido" |
+| password | Min 6 characters | "La contraseña debe tener al menos 6 caracteres" |
+| password | Max 100 characters | "Contraseña demasiado larga" |
+| preferredLanguage | Enum: `es`, `en` | Invalid enum value |
+
+## Notes
+
+- Email and username uniqueness checks are case-insensitive
+- Usernames are normalized: trimmed and converted to lowercase
+- Emails are normalized: trimmed and converted to lowercase
+- Password is hashed using bcrypt with salt rounds = 12
+- The returned JWT token can be used immediately for authenticated requests
+- Rate limiting applies to prevent abuse

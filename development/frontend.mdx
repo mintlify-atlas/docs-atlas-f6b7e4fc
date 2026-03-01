@@ -1,0 +1,381 @@
+---
+title: Frontend Architecture
+description: Deep dive into the React frontend structure and patterns
+---
+
+# Frontend Architecture
+
+The GeoChallenge frontend is a modern React application built with TypeScript, Vite, and TailwindCSS.
+
+## Tech Stack
+
+| Technology | Version | Purpose |
+|------------|---------|----------|
+| React | 18.2 | UI library |
+| TypeScript | 5.2 | Type safety |
+| Vite | 5.1 | Build tool and dev server |
+| React Router | 6.22 | Client-side routing |
+| TailwindCSS | 3.4 | Utility-first CSS |
+| Socket.IO Client | 4.7 | Real-time game connections |
+| Axios | 1.6 | HTTP client |
+| Leaflet | 1.9 | Interactive maps |
+| Zod | 3.23 | Schema validation |
+| Vitest | 1.3 | Unit testing |
+| Playwright | 1.51 | E2E testing |
+
+## Project Structure
+
+```
+frontend/
+├── src/
+│   ├── components/       # Atomic Design components
+│   │   ├── atoms/        # Button, Icon, Input, Badge
+│   │   ├── molecules/    # Card, FormField, ListItem
+│   │   ├── organisms/    # Header, Modal, ScreenLayout
+│   │   └── templates/    # Reusable page layouts
+│   ├── context/          # React Context providers
+│   │   ├── AuthContext.tsx
+│   │   └── GameContext.tsx
+│   ├── hooks/            # Custom React hooks
+│   │   ├── useApi.ts
+│   │   ├── useFormValidation.ts
+│   │   ├── useLocalStorage.ts
+│   │   └── useMediaQuery.ts
+│   ├── pages/            # Route components
+│   │   ├── HomePage.tsx
+│   │   ├── LoginPage.tsx
+│   │   ├── GamePage.tsx
+│   │   └── ...
+│   ├── services/         # API clients
+│   │   ├── api.ts
+│   │   └── socket.ts
+│   ├── utils/            # Helper functions
+│   │   ├── routing.ts
+│   │   └── validation.ts
+│   ├── App.tsx           # Root component with routing
+│   └── main.tsx          # Application entry point
+├── public/               # Static assets
+├── tests/                # E2E tests
+├── vite.config.ts        # Vite configuration
+└── package.json
+```
+
+## Design System
+
+### Atomic Design Pattern
+
+The frontend follows **Atomic Design** principles (v1.2.56+):
+
+**Atoms** - Basic building blocks:
+- `Button`: Primary/secondary variants, loading states
+- `Icon`: SVG icon wrapper
+- `Input`: Form inputs with validation styling
+- `Badge`: Status indicators (difficulty, score)
+
+**Molecules** - Simple component combinations:
+- `Card`: Content containers with consistent styling
+- `FormField`: Label + Input + Error message
+- `ListItem`: Reusable list item with icon/actions
+
+**Organisms** - Complex UI sections:
+- `Header`: Navigation bar with auth state
+- `Modal`: Overlay dialogs
+- `ScreenLayout`: Full-screen page wrapper with header/content/footer
+
+**Templates** - Page-level layouts:
+- `GameRoundScaffold`: Universal game layout (v1.2.37)
+- `RoundActionTray`: Shared action buttons for games (v1.2.38)
+
+### CSS Custom Properties
+
+Global design tokens are defined in `src/index.css` (v1.2.46):
+
+```css
+:root {
+  /* Colors */
+  --primary-bg: #1F2937;
+  --primary-text: #FFFFFF;
+  --correct-green: #10B981;
+  --error-red: #EF4444;
+  --warning-yellow: #F59E0B;
+  
+  /* Spacing */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  
+  /* Border radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+```
+
+**Dark mode** is enabled automatically via `prefers-color-scheme`.
+
+## Routing Architecture
+
+The app uses React Router v6 with protected routes:
+
+```tsx
+// From src/App.tsx
+const router = createBrowserRouter([
+  {
+    element: <RootProviders />,
+    children: [
+      { path: '/', element: <HomePage /> },
+      { path: '/login', element: <PublicRoute><LoginPage /></PublicRoute> },
+      { path: '/menu', element: <ProtectedRoute><MenuPage /></ProtectedRoute> },
+      {
+        element: <ProtectedRoute><SinglePlayerGameLayout /></ProtectedRoute>,
+        children: [
+          { path: '/game/single', element: <GamePage /> },
+          { path: '/results', element: <ResultsPage /> },
+        ],
+      },
+      // ... more routes
+    ],
+  },
+]);
+```
+
+### Route Guards
+
+- **ProtectedRoute**: Redirects to `/login` if user is not authenticated
+- **PublicRoute**: Redirects to `/menu` if user is already logged in
+- **AuthRouteLoading**: Shows loading state during auth check
+
+### GitHub Pages Support
+
+The app supports deployment to GitHub Pages with dynamic base path:
+
+```ts
+// vite.config.ts
+base: process.env.VITE_BASE_PATH ?? '/'
+```
+
+Set `VITE_BASE_PATH=/geochallenge/` for deployment.
+
+## State Management
+
+### AuthContext
+
+Manages authentication state globally:
+
+```tsx
+const { user, isLoading, login, logout, register } = useAuth();
+```
+
+**Features:**
+- Token stored in localStorage
+- Automatic session validation on mount
+- Socket connection management
+- Email/username normalization (v1.2.49)
+
+### GameContext
+
+Manages single-player game state:
+
+```tsx
+const { 
+  questions, 
+  currentQuestionIndex, 
+  score, 
+  submitAnswer, 
+  nextQuestion 
+} = useGame();
+```
+
+**Features:**
+- Question loading and caching
+- Answer validation
+- Score calculation
+- Game result submission
+
+## Custom Hooks
+
+Reusable logic extracted to hooks (v1.2.55):
+
+### useLocalStorage
+```tsx
+const [value, setValue] = useLocalStorage('key', defaultValue);
+```
+
+### useMediaQuery
+```tsx
+const isMobile = useMediaQuery('(max-width: 768px)');
+```
+
+### useFormValidation
+```tsx
+const { errors, validate, isValid } = useFormValidation(zodSchema);
+```
+
+### useApi
+```tsx
+const { data, loading, error, mutate } = useApi<User>('/api/profile');
+```
+
+Includes cache and optimistic updates.
+
+## Mobile-First Design
+
+### Viewport Units
+
+**IMPORTANT:** Use `dvh` (dynamic viewport height) instead of `vh` to avoid issues with mobile browser bars:
+
+```css
+.game-container {
+  height: 100dvh; /* ✅ Correct */
+  /* height: 100vh; ❌ Avoid */
+}
+```
+
+### Safe Areas
+
+Respect device notches and home indicators:
+
+```css
+.header {
+  padding-top: env(safe-area-inset-top);
+}
+
+.footer {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+```
+
+### Zero-Scroll Policy (Game Screens)
+
+Game screens MUST NOT scroll. Use fixed layouts:
+
+```tsx
+<UniversalGameLayout>
+  <header /> {/* Fixed top */}
+  <main />   {/* Flexible content */}
+  <footer /> {/* Fixed bottom */}
+</UniversalGameLayout>
+```
+
+See `AGENTS.md` for full layout rules.
+
+## Real-Time Features
+
+Socket.IO is used for duels and challenges:
+
+```tsx
+// services/socket.ts
+import { io, Socket } from 'socket.io-client';
+
+const socket: Socket = io(API_URL, {
+  auth: { token: localStorage.getItem('token') },
+});
+
+// Listen for events
+socket.on('duel:matched', (data) => {
+  console.log('Matched with opponent:', data.opponentName);
+});
+
+// Emit events
+socket.emit('duel:join', { category: 'FLAG' });
+```
+
+### Connection Management
+
+- Socket connects on login
+- Disconnects on logout
+- Auto-reconnects on network issues
+- Keep-alive pings every 4 minutes (v1.2.14)
+
+## Testing Strategy
+
+### Unit Tests (Vitest)
+
+Test components in isolation:
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import { Button } from './Button';
+
+test('Button renders with text', () => {
+  render(<Button>Click me</Button>);
+  expect(screen.getByText('Click me')).toBeInTheDocument();
+});
+```
+
+**Run:** `npm run test`
+
+### E2E Tests (Playwright)
+
+Test full user flows:
+
+```tsx
+import { test, expect } from '@playwright/test';
+
+test('User can login', async ({ page }) => {
+  await page.goto('/');
+  await page.click('text=Iniciar sesión');
+  await page.fill('input[type="email"]', 'test@example.com');
+  await page.fill('input[type="password"]', 'password');
+  await page.click('button[type="submit"]');
+  await expect(page).toHaveURL('/menu');
+});
+```
+
+**Run:** `npm run test:e2e`
+
+### Mobile Testing
+
+Playwright tests include mobile viewports:
+
+```tsx
+test.use({ viewport: { width: 375, height: 667 } }); // iPhone SE
+test.use({ viewport: { width: 393, height: 852 } }); // iPhone 15 Pro
+```
+
+## Build and Deployment
+
+### Development Build
+```bash
+npm run dev
+```
+
+### Production Build
+```bash
+npm run build
+```
+
+Outputs to `dist/` with optimized assets.
+
+### Preview Production Build
+```bash
+npm run preview
+```
+
+### CI Quality Gate
+```bash
+npm run ci:quality  # lint + test + build
+```
+
+Used in GitHub Actions before deployment.
+
+## Best Practices
+
+1. **No mock data in production** - Always fetch real data from the API
+2. **Mobile-first** - Design for small screens first, enhance for desktop
+3. **Test everything** - All features must have unit or E2E tests
+4. **Dark mode always** - Validate styles in both themes
+5. **Validate layout** - Ensure no clipping or horizontal overflow
+6. **Use design tokens** - No hardcoded colors (`#3B82F6` ❌ `--primary` ✅)
+7. **Semantic HTML** - Use proper tags for accessibility
+8. **TypeScript strict mode** - No `any` types without justification
+
+## Version History
+
+The current frontend version is **v1.2.71**. See the main README for detailed changelogs.
+
+## Next Steps
+
+- [Backend Architecture](/development/backend) - Learn about the API
+- [Database Schema](/development/database) - Understand data models

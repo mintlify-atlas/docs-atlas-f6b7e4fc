@@ -1,0 +1,109 @@
+---
+title: 'Get Global Leaderboard'
+api: 'GET /api/leaderboard'
+description: 'Retrieve the global leaderboard with top players and optional authenticated user rank'
+---
+
+## Query Parameters
+
+<ParamField query="limit" type="number" default="50">
+  Maximum number of top players to return (capped at 100)
+</ParamField>
+
+## Authentication
+
+Optional. If a valid JWT token is provided, the response will include the authenticated user's rank.
+
+## Response
+
+<ResponseField name="leaderboard" type="array">
+  Array of top players ordered by score (descending)
+  
+  <Expandable title="LeaderboardEntry properties">
+    <ResponseField name="rank" type="number">
+      Player's position in the leaderboard (1-indexed)
+    </ResponseField>
+    
+    <ResponseField name="userId" type="string">
+      Unique identifier of the player
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      Player's display name
+    </ResponseField>
+    
+    <ResponseField name="score" type="number">
+      Player's highest score
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="totalPlayers" type="number">
+  Total number of players with scores on the leaderboard
+</ResponseField>
+
+<ResponseField name="topScore" type="number | null">
+  The highest score achieved by any player
+</ResponseField>
+
+<ResponseField name="userRank" type="object | null">
+  Current user's rank information (only included if authenticated)
+  
+  <Expandable title="UserRank properties">
+    <ResponseField name="rank" type="number">
+      User's position in the global leaderboard
+    </ResponseField>
+    
+    <ResponseField name="score" type="number">
+      User's highest score
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X GET "https://api.geochallenge.com/api/leaderboard?limit=20" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+## Example Response
+
+```json
+{
+  "leaderboard": [
+    {
+      "rank": 1,
+      "userId": "user-123",
+      "username": "GeoMaster",
+      "score": 9850
+    },
+    {
+      "rank": 2,
+      "userId": "user-456",
+      "username": "MapExpert",
+      "score": 9200
+    }
+  ],
+  "totalPlayers": 15420,
+  "topScore": 9850,
+  "userRank": {
+    "rank": 127,
+    "score": 7500
+  }
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error message when the request fails
+</ResponseField>
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "Error interno del servidor"
+}
+```

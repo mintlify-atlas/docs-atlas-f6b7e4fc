@@ -1,0 +1,419 @@
+---
+title: Environment Variables
+description: Complete reference for configuring environment variables in development and production
+---
+
+## Overview
+
+GeoChallenge uses environment variables to configure both frontend and backend services. This page documents all variables, their purposes, and where to set them.
+
+## Backend Environment Variables
+
+Backend configuration is managed in `backend/src/config/env.ts` and loaded from `.env` files.
+
+### Required in Production
+
+These variables **must** be set in production or the server will refuse to start:
+
+<Warning>
+  The backend validates required variables at startup. Missing variables will throw an error and prevent the server from starting.
+</Warning>
+
+```typescript
+const required = ['DATABASE_URL', 'JWT_SECRET', 'REDIS_URL', 'FRONTEND_URL'];
+```
+
+#### DATABASE_URL
+
+**Purpose**: PostgreSQL database connection string  
+**Format**: `postgresql://user:password@host:port/database?schema=public`
+
+**Example**:
+```bash
+DATABASE_URL="postgresql://postgres:password@db.example.com:5432/geochallenge?schema=public"
+```
+
+**Render Setup**:
+1. Create PostgreSQL database in Render dashboard
+2. Copy **Internal Database URL**
+3. Set as environment variable in your web service
+
+#### JWT_SECRET
+
+**Purpose**: Secret key for signing JSON Web Tokens  
+**Security**: Must be a strong, random string in production
+
+**Default (dev only)**: `default-secret-change-me`
+
+<Warning>
+  Using the default `default-secret-change-me` in production will cause the server to fail startup with:
+  ```
+  Error: JWT_SECRET must be changed from default value in production
+  ```
+</Warning>
+
+**Generate a secure secret**:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+**Render Setup**:
+Set in `render.yaml`:
+```yaml
+- key: JWT_SECRET
+  generateValue: true  # Render auto-generates secure value
+```
+
+#### REDIS_URL
+
+**Purpose**: Redis connection string for caching and session storage  
+**Format**: `redis://[username:password@]host:port[/database]`
+
+**Example**:
+```bash
+REDIS_URL="redis://localhost:6379"
+```
+
+**Render Setup**:
+1. Create Redis instance in Render dashboard
+2. Copy **Internal Redis URL**  
+3. Set as environment variable in your web service
+
+#### FRONTEND_URL
+
+**Purpose**: Frontend URL for CORS configuration  
+**Format**: Full URL with protocol, no trailing slash
+
+**Examples**:
+```bash
+# GitHub Pages
+FRONTEND_URL="https://username.github.io/geochallenge"
+
+# Render Static Site
+FRONTEND_URL="https://geochallenge.onrender.com"
+
+# Local Development
+FRONTEND_URL="http://localhost:5173"
+```
+
+### Optional Variables
+
+#### NODE_ENV
+
+**Purpose**: Application environment mode  
+**Values**: `development` | `production` | `test`  
+**Default**: `development`
+
+```bash
+NODE_ENV="production"
+```
+
+**Effect**:
+- Enables/disables validation of required variables
+- Controls logging verbosity
+- Affects error response detail
+
+#### PORT
+
+**Purpose**: HTTP server port  
+**Default**: `3001`
+
+```bash
+PORT="3001"
+```
+
+**Note**: Render automatically sets this to their assigned port.
+
+#### JWT_EXPIRES_IN
+
+**Purpose**: JWT token expiration time  
+**Format**: Time string (`15m`, `7d`, `24h`)  
+**Default**: `24h`
+
+```bash
+JWT_EXPIRES_IN="7d"
+```
+
+**Render Setup**:
+```yaml
+- key: JWT_EXPIRES_IN
+  value: 7d
+```
+
+### Test/Development Only
+
+These variables should **never** be used in production:
+
+#### ENABLE_TEST_AUTH_BYPASS
+
+**Purpose**: Enable test authentication bypass (for E2E tests)  
+**Values**: `true` | `false`  
+**Default**: `false` (auto-enabled in `NODE_ENV=test`)
+
+<Warning>
+  **Never** enable this in production. It bypasses authentication completely.
+</Warning>
+
+```bash
+ENABLE_TEST_AUTH_BYPASS="true"
+```
+
+#### TEST_AUTH_BYPASS_SECRET
+
+**Purpose**: Secret header value for test auth bypass  
+**Default**: `local-test-auth-bypass` (in test mode)
+
+```bash
+TEST_AUTH_BYPASS_SECRET="your-test-secret"
+```
+
+#### TEST_AUTH_BYPASS_EMAIL
+
+**Purpose**: Email to use for bypassed authentication  
+**Default**: `test-runner@geochallenge.local`
+
+```bash
+TEST_AUTH_BYPASS_EMAIL="test@example.com"
+```
+
+## Frontend Environment Variables
+
+Frontend configuration uses Vite environment variables (prefixed with `VITE_`).
+
+### Build-Time Variables
+
+#### VITE_BASE_PATH
+
+**Purpose**: Base path for GitHub Pages deployment  
+**Format**: Path with leading and trailing slashes  
+**Default**: `/`
+
+**GitHub Pages Example**:
+```bash
+VITE_BASE_PATH="/geochallenge/"
+```
+
+**Effect**: Configured in `vite.config.ts`:
+```typescript
+export default defineConfig({
+  base: process.env.VITE_BASE_PATH ?? '/',
+});
+```
+
+**Automatic Setup**: The GitHub Actions workflow sets this automatically:
+```yaml
+env:
+  VITE_BASE_PATH: /${{ github.event.repository.name }}/
+```
+
+### Runtime Variables
+
+These are typically set via Render environment variables for static sites:
+
+#### VITE_API_URL
+
+**Purpose**: Backend API base URL  
+**Format**: Full URL with protocol, no trailing slash
+
+**Example**:
+```bash
+VITE_API_URL="https://geochallenge-api.onrender.com"
+```
+
+**Usage in Code**:
+```typescript
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+```
+
+#### VITE_SOCKET_URL
+
+**Purpose**: WebSocket server URL  
+**Format**: Full URL with protocol, no trailing slash
+
+**Example**:
+```bash
+VITE_SOCKET_URL="https://geochallenge-api.onrender.com"
+```
+
+**Note**: Usually the same as `VITE_API_URL` since the API server also handles WebSocket connections.
+
+## Environment File Structure
+
+### Backend (.env)
+
+Create `backend/.env` for local development:
+
+```bash
+# Database
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/geochallenge"
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+
+# JWT
+JWT_SECRET="local-dev-secret-do-not-use-in-production"
+JWT_EXPIRES_IN="24h"
+
+# CORS
+FRONTEND_URL="http://localhost:5173"
+
+# Server
+PORT="3001"
+NODE_ENV="development"
+```
+
+### Frontend (.env)
+
+Create `frontend/.env` for local development:
+
+```bash
+# API
+VITE_API_URL="http://localhost:3001"
+VITE_SOCKET_URL="http://localhost:3001"
+
+# Routing
+VITE_BASE_PATH="/"
+```
+
+## Configuration by Environment
+
+### Local Development
+
+<Steps>
+  <Step title="Backend">
+    1. Copy `backend/.env.example` to `backend/.env`
+    2. Set local PostgreSQL and Redis URLs
+    3. Use default JWT_SECRET (dev only)
+  </Step>
+  <Step title="Frontend">
+    1. Copy `frontend/.env.example` to `frontend/.env`  
+    2. Point to local backend (`localhost:3001`)
+  </Step>
+</Steps>
+
+### GitHub Pages + Render
+
+<Steps>
+  <Step title="Backend (Render)">
+    Set in Render dashboard:
+    - DATABASE_URL → from Render PostgreSQL
+    - REDIS_URL → from Render Redis
+    - JWT_SECRET → auto-generated
+    - FRONTEND_URL → your GitHub Pages URL
+  </Step>
+  <Step title="Frontend (GitHub Actions)">
+    Set in GitHub Secrets:
+    - No secrets needed (VITE_BASE_PATH is auto-set)
+    - Backend URLs are determined by Vite proxy config
+  </Step>
+  <Step title="Keep-Awake Workflow">
+    Set in GitHub Secrets:
+    - BACKEND_HEALTHCHECK_URL → your Render backend health endpoint
+  </Step>
+</Steps>
+
+### Render Static Site
+
+If deploying frontend to Render instead of GitHub Pages:
+
+```yaml
+services:
+  - type: web
+    name: geochallenge
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://geochallenge-api.onrender.com
+      - key: VITE_SOCKET_URL
+        value: https://geochallenge-api.onrender.com
+```
+
+## Security Best Practices
+
+<Warning>
+  Never commit `.env` files to version control. They should be in `.gitignore`.
+</Warning>
+
+### Do's
+
+- ✅ Use `.env.example` files with placeholder values
+- ✅ Generate strong random secrets for production
+- ✅ Use different secrets per environment
+- ✅ Rotate secrets periodically
+- ✅ Use managed database services (Render, AWS RDS, etc.)
+
+### Don'ts
+
+- ❌ Never commit actual secrets to Git
+- ❌ Never use development secrets in production
+- ❌ Never share secrets in plaintext (Slack, email, etc.)
+- ❌ Never use the default `default-secret-change-me` in production
+- ❌ Never enable `ENABLE_TEST_AUTH_BYPASS` in production
+
+## Validation
+
+The backend validates required variables at startup:
+
+```typescript
+if (isProduction) {
+  const required = ['DATABASE_URL', 'JWT_SECRET', 'REDIS_URL', 'FRONTEND_URL'];
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+  if (process.env.JWT_SECRET === 'default-secret-change-me') {
+    throw new Error('JWT_SECRET must be changed from default value in production');
+  }
+}
+```
+
+## Troubleshooting
+
+### "Missing required environment variables"
+
+Check that all required variables are set:
+```bash
+echo $DATABASE_URL
+echo $REDIS_URL
+echo $JWT_SECRET
+echo $FRONTEND_URL
+```
+
+### "JWT_SECRET must be changed from default value"
+
+Generate a new secret:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+### CORS Errors
+
+Verify `FRONTEND_URL` matches your actual frontend URL exactly:
+- Include protocol (`http://` or `https://`)
+- No trailing slash
+- Match subdomain and port
+
+### Build Fails in GitHub Actions
+
+If VITE variables are needed at build time, set them in the workflow:
+
+```yaml
+- name: Build
+  env:
+    VITE_BASE_PATH: /${{ github.event.repository.name }}/
+  run: npm run build
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="GitHub Pages Deployment" icon="globe" href="./github-pages">
+    Deploy the frontend with automated CI/CD
+  </Card>
+  <Card title="Backend Deployment" icon="server" href="./backend-hosting">
+    Deploy the backend API to Render
+  </Card>
+</CardGroup>

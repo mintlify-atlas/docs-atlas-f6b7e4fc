@@ -1,0 +1,244 @@
+---
+title: 'Duel Matchmaking Events'
+description: 'WebSocket events for finding opponents and starting duels'
+---
+
+## Connection
+
+Connect to the WebSocket server with authentication:
+
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('wss://api.geochallenge.com', {
+  auth: {
+    token: 'YOUR_JWT_TOKEN'
+  }
+});
+
+// Alternative: query parameter
+const socket = io('wss://api.geochallenge.com?token=YOUR_JWT_TOKEN');
+```
+
+## Emit Events
+
+Events sent from client to server.
+
+### `duel:queue`
+
+Join the matchmaking queue to find an opponent.
+
+<ParamField body="category" type="Category" optional>
+  Game category preference: `MAP`, `FLAG`, `CAPITAL`, `SILHOUETTE`, or `MIXED` (default)
+</ParamField>
+
+```javascript
+socket.emit('duel:queue', { 
+  category: 'FLAG' 
+});
+
+// Or join without category preference (defaults to MIXED)
+socket.emit('duel:queue');
+```
+
+### `duel:cancel`
+
+Cancel matchmaking and leave the queue.
+
+```javascript
+socket.emit('duel:cancel');
+```
+
+### `duel:ready`
+
+Indicate that the player is ready to start the duel (after being matched).
+
+```javascript
+socket.emit('duel:ready');
+```
+
+## Listen Events
+
+Events received from server to client.
+
+### `duel:queued`
+
+Confirmation that the player has been added to the matchmaking queue.
+
+<ResponseField name="message" type="string">
+  Status message (e.g., "Buscando oponente...")
+</ResponseField>
+
+<ResponseField name="queueSize" type="number">
+  Current number of players in the queue
+</ResponseField>
+
+```javascript
+socket.on('duel:queued', (data) => {
+  console.log(data.message); // "Buscando oponente..."
+  console.log(`Queue size: ${data.queueSize}`);
+});
+```
+
+### `duel:cancelled`
+
+Confirmation that matchmaking has been cancelled.
+
+<ResponseField name="message" type="string">
+  Confirmation message (e.g., "Búsqueda cancelada")
+</ResponseField>
+
+```javascript
+socket.on('duel:cancelled', (data) => {
+  console.log(data.message);
+});
+```
+
+### `duel:matched`
+
+A match has been found. Players should prepare for the duel.
+
+<ResponseField name="duelId" type="string">
+  Unique identifier for this duel
+</ResponseField>
+
+<ResponseField name="questionsCount" type="number">
+  Total number of questions in the duel
+</ResponseField>
+
+<ResponseField name="timePerQuestion" type="number">
+  Seconds allowed per question
+</ResponseField>
+
+<ResponseField name="category" type="string">
+  Category for this duel (MAP, FLAG, CAPITAL, SILHOUETTE, or MIXED)
+</ResponseField>
+
+```javascript
+socket.on('duel:matched', (data) => {
+  console.log(`Matched! Duel ID: ${data.duelId}`);
+  console.log(`${data.questionsCount} questions, ${data.timePerQuestion}s each`);
+  console.log(`Category: ${data.category}`);
+  
+  // Emit ready when player is prepared
+  socket.emit('duel:ready');
+});
+```
+
+### `duel:opponent`
+
+Information about the matched opponent.
+
+<ResponseField name="userId" type="string">
+  Opponent's unique identifier
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  Opponent's display name
+</ResponseField>
+
+```javascript
+socket.on('duel:opponent', (data) => {
+  console.log(`Opponent: ${data.username}`);
+});
+```
+
+### `duel:ready-timeout`
+
+Forced start after timeout if not all players marked ready.
+
+<ResponseField name="timeoutMs" type="number">
+  The timeout duration that elapsed (7000ms)
+</ResponseField>
+
+```javascript
+socket.on('duel:ready-timeout', (data) => {
+  console.log(`Force starting after ${data.timeoutMs}ms timeout`);
+});
+```
+
+### `duel:countdown`
+
+Countdown before duel starts (emitted every second).
+
+<ResponseField name="seconds" type="number">
+  Remaining seconds until duel starts (3, 2, or 1)
+</ResponseField>
+
+```javascript
+socket.on('duel:countdown', (data) => {
+  console.log(`Starting in ${data.seconds}...`);
+});
+```
+
+### `duel:start`
+
+The duel has officially started.
+
+<ResponseField name="message" type="string">
+  Start message (e.g., "¡Comienza el duelo!")
+</ResponseField>
+
+```javascript
+socket.on('duel:start', (data) => {
+  console.log(data.message);
+});
+```
+
+### `duel:error`
+
+An error occurred during matchmaking or duel setup.
+
+<ResponseField name="message" type="string">
+  Error description
+</ResponseField>
+
+```javascript
+socket.on('duel:error', (data) => {
+  console.error(`Error: ${data.message}`);
+});
+```
+
+## Complete Example
+
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('wss://api.geochallenge.com', {
+  auth: { token: localStorage.getItem('jwt') }
+});
+
+// Join queue
+socket.emit('duel:queue', { category: 'FLAG' });
+
+// Handle queue confirmation
+socket.on('duel:queued', (data) => {
+  console.log('Searching for opponent...');
+});
+
+// Handle match found
+socket.on('duel:matched', (data) => {
+  console.log(`Match found! Duel ID: ${data.duelId}`);
+  socket.emit('duel:ready');
+});
+
+// Handle opponent info
+socket.on('duel:opponent', (data) => {
+  console.log(`You will face: ${data.username}`);
+});
+
+// Handle countdown
+socket.on('duel:countdown', (data) => {
+  console.log(`Starting in ${data.seconds}...`);
+});
+
+// Handle start
+socket.on('duel:start', () => {
+  console.log('Duel started! Good luck!');
+});
+
+// Cancel if needed
+function cancelSearch() {
+  socket.emit('duel:cancel');
+}
+```

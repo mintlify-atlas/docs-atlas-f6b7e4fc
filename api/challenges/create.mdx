@@ -1,0 +1,240 @@
+---
+title: "Create Challenge"
+api: "POST /api/challenges"
+description: "Create a new multiplayer challenge with custom categories and settings"
+---
+
+## Authentication
+
+Requires JWT authentication via `Authorization: Bearer <token>` header.
+
+## Request Body
+
+<ParamField body="categories" type="string[]" required>
+  Array of category types for the challenge. Must contain at least one category.
+  
+  Valid values:
+  - `MAP` - Map-based questions
+  - `FLAG` - Flag identification
+  - `CAPITAL` - Capital city questions
+  - `SILHOUETTE` - Country silhouette questions
+  - `MIXED` - Random mix of all categories
+  
+  Values are case-insensitive and will be normalized to uppercase.
+</ParamField>
+
+<ParamField body="maxPlayers" type="number" required>
+  Maximum number of players allowed in the challenge.
+  
+  - Minimum: `2`
+  - Maximum: `8`
+  - Must be an integer
+</ParamField>
+
+<ParamField body="answerTimeSeconds" type="number" required>
+  Time limit per question in seconds.
+  
+  Allowed values: `10`, `20`, or `30`
+</ParamField>
+
+## Response
+
+<ResponseField name="message" type="string">
+  Success message: "Desafío creado exitosamente"
+</ResponseField>
+
+<ResponseField name="challenge" type="object">
+  The created challenge object
+  
+  <ResponseField name="id" type="string">
+    Unique challenge identifier (CUID)
+  </ResponseField>
+  
+  <ResponseField name="status" type="string">
+    Challenge status. Always `PENDING` for newly created challenges.
+  </ResponseField>
+  
+  <ResponseField name="categories" type="string[]">
+    Selected categories for this challenge
+  </ResponseField>
+  
+  <ResponseField name="maxPlayers" type="number">
+    Maximum player capacity
+  </ResponseField>
+  
+  <ResponseField name="answerTimeSeconds" type="number">
+    Time limit per question in seconds
+  </ResponseField>
+  
+  <ResponseField name="questionIds" type="string[]">
+    Array of 10 pre-selected question IDs for reproducibility
+  </ResponseField>
+  
+  <ResponseField name="creatorId" type="string">
+    User ID of the challenge creator
+  </ResponseField>
+  
+  <ResponseField name="creator" type="object">
+    Creator user information
+    
+    <ResponseField name="id" type="string">
+      User ID
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      Username
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="participants" type="object[]">
+    Array of participants. Initially contains only the creator.
+    
+    <ResponseField name="userId" type="string">
+      Participant user ID
+    </ResponseField>
+    
+    <ResponseField name="score" type="number | null">
+      Final score. `null` until the participant completes the challenge.
+    </ResponseField>
+    
+    <ResponseField name="joinedAt" type="string">
+      ISO 8601 timestamp when the user joined
+    </ResponseField>
+    
+    <ResponseField name="completedAt" type="string | null">
+      ISO 8601 timestamp when completed. `null` if not yet played.
+    </ResponseField>
+    
+    <ResponseField name="user" type="object">
+      User information (id, username)
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="createdAt" type="string">
+    ISO 8601 timestamp when the challenge was created
+  </ResponseField>
+  
+  <ResponseField name="expiresAt" type="string">
+    ISO 8601 timestamp when the challenge expires (7 days from creation)
+  </ResponseField>
+  
+  <ResponseField name="completedAt" type="string | null">
+    ISO 8601 timestamp when all players finished. `null` until completed.
+  </ResponseField>
+  
+  <ResponseField name="winnerId" type="string | null">
+    User ID of the winner. `null` until challenge is completed or if there's a tie.
+  </ResponseField>
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X POST https://api.geochallenge.com/api/challenges \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "categories": ["FLAG", "CAPITAL"],
+    "maxPlayers": 4,
+    "answerTimeSeconds": 20
+  }'
+```
+
+## Example Response
+
+```json
+{
+  "message": "Desafío creado exitosamente",
+  "challenge": {
+    "id": "clx1abc2def3ghi4jkl5",
+    "status": "PENDING",
+    "categories": ["FLAG", "CAPITAL"],
+    "maxPlayers": 4,
+    "answerTimeSeconds": 20,
+    "questionIds": [
+      "clx1q1...",
+      "clx1q2...",
+      "clx1q3...",
+      "clx1q4...",
+      "clx1q5...",
+      "clx1q6...",
+      "clx1q7...",
+      "clx1q8...",
+      "clx1q9...",
+      "clx1q10..."
+    ],
+    "creatorId": "clx1user123",
+    "creator": {
+      "id": "clx1user123",
+      "username": "player1"
+    },
+    "participants": [
+      {
+        "userId": "clx1user123",
+        "score": null,
+        "joinedAt": "2026-03-01T12:00:00.000Z",
+        "completedAt": null,
+        "user": {
+          "id": "clx1user123",
+          "username": "player1"
+        }
+      }
+    ],
+    "createdAt": "2026-03-01T12:00:00.000Z",
+    "expiresAt": "2026-03-08T12:00:00.000Z",
+    "completedAt": null,
+    "winnerId": null
+  }
+}
+```
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error message describing what went wrong
+</ResponseField>
+
+<ResponseField name="details" type="object[]">
+  Validation error details (only present for Zod validation failures)
+</ResponseField>
+
+### 400 Bad Request
+
+Returned when:
+- Invalid categories array (empty or invalid values)
+- `maxPlayers` is not between 2 and 8
+- `answerTimeSeconds` is not 10, 20, or 30
+- Insufficient questions available for selected categories
+
+```json
+{
+  "error": "Datos inválidos",
+  "details": [
+    {
+      "path": ["maxPlayers"],
+      "message": "Number must be greater than or equal to 2"
+    }
+  ]
+}
+```
+
+### 401 Unauthorized
+
+Returned when the JWT token is missing or invalid.
+
+## Challenge Lifecycle
+
+After creation, a challenge goes through the following states:
+
+1. **PENDING** - Waiting for players to join (up to `maxPlayers`)
+2. **ACCEPTED** - All players joined or challenge started
+3. **COMPLETED** - All participants finished playing
+4. **EXPIRED** - Challenge expired after 7 days without completion
+
+## Notes
+
+- The creator is automatically added as the first participant
+- Exactly 10 questions are pre-selected and stored in `questionIds` for reproducibility
+- All participants answer the same questions in the same order
+- Challenges expire 7 days after creation if not completed
+- If categories include `MIXED`, questions are randomly selected from all categories

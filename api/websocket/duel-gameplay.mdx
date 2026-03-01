@@ -1,0 +1,365 @@
+---
+title: 'Duel Gameplay Events'
+description: 'WebSocket events for answering questions and receiving results during an active duel'
+---
+
+## Emit Events
+
+Events sent from client to server during gameplay.
+
+### `duel:answer`
+
+Submit an answer for the current question.
+
+<ParamField body="questionId" type="string" required>
+  Unique identifier of the question being answered
+</ParamField>
+
+<ParamField body="answer" type="string" required>
+  The player's selected answer
+</ParamField>
+
+<ParamField body="timeRemaining" type="number" required>
+  Seconds remaining when the answer was submitted (used for tiebreaking)
+</ParamField>
+
+<ParamField body="coordinates" type="object" optional>
+  For map-based questions, the selected coordinates
+  
+  <Expandable title="Coordinates properties">
+    <ParamField body="lat" type="number" required>
+      Latitude of the selected point
+    </ParamField>
+    
+    <ParamField body="lng" type="number" required>
+      Longitude of the selected point
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+```javascript
+// Standard answer
+socket.emit('duel:answer', {
+  questionId: 'question-123',
+  answer: 'Paris',
+  timeRemaining: 8.5
+});
+
+// Map question with coordinates
+socket.emit('duel:answer', {
+  questionId: 'question-456',
+  answer: 'Brazil',
+  timeRemaining: 12.3,
+  coordinates: {
+    lat: -14.235,
+    lng: -51.925
+  }
+});
+```
+
+### `ping`
+
+Keep the connection alive.
+
+```javascript
+socket.emit('ping');
+```
+
+## Listen Events
+
+Events received from server to client during gameplay.
+
+### `duel:question`
+
+A new question has been sent.
+
+<ResponseField name="questionIndex" type="number">
+  Current question number (0-indexed)
+</ResponseField>
+
+<ResponseField name="totalQuestions" type="number">
+  Total number of questions in the duel
+</ResponseField>
+
+<ResponseField name="question" type="object">
+  The question data
+  
+  <Expandable title="GameQuestion properties">
+    <ResponseField name="id" type="string">
+      Unique question identifier
+    </ResponseField>
+    
+    <ResponseField name="type" type="string">
+      Question type (MAP, FLAG, CAPITAL, SILHOUETTE)
+    </ResponseField>
+    
+    <ResponseField name="text" type="string">
+      Question text
+    </ResponseField>
+    
+    <ResponseField name="options" type="array">
+      Array of answer options (strings)
+    </ResponseField>
+    
+    <ResponseField name="imageUrl" type="string" optional>
+      URL to question image (flags, silhouettes, maps)
+    </ResponseField>
+    
+    <ResponseField name="category" type="string">
+      Question category
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="timeLimit" type="number">
+  Seconds allowed to answer this question
+</ResponseField>
+
+```javascript
+socket.on('duel:question', (data) => {
+  console.log(`Question ${data.questionIndex + 1}/${data.totalQuestions}`);
+  console.log(data.question.text);
+  console.log('Options:', data.question.options);
+  console.log(`Time limit: ${data.timeLimit}s`);
+  
+  // Display question and start timer
+  displayQuestion(data.question);
+  startTimer(data.timeLimit);
+});
+```
+
+### `duel:playerAnswered`
+
+Notification that a player has submitted an answer.
+
+<ResponseField name="userId" type="string">
+  ID of the player who answered
+</ResponseField>
+
+<ResponseField name="questionIndex" type="number">
+  Question number that was answered
+</ResponseField>
+
+```javascript
+socket.on('duel:playerAnswered', (data) => {
+  if (data.userId === currentUserId) {
+    console.log('You answered!');
+  } else {
+    console.log('Opponent answered!');
+  }
+});
+```
+
+### `duel:questionResult`
+
+Results for the current question (shown after both players answer or timeout).
+
+<ResponseField name="questionIndex" type="number">
+  Question number for these results
+</ResponseField>
+
+<ResponseField name="correctAnswer" type="string">
+  The correct answer to the question
+</ResponseField>
+
+<ResponseField name="results" type="array">
+  Results for both players
+  
+  <Expandable title="PlayerResult properties">
+    <ResponseField name="userId" type="string">
+      Player's unique identifier
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      Player's display name
+    </ResponseField>
+    
+    <ResponseField name="answer" type="object">
+      Player's answer details
+      
+      <Expandable title="AnswerResult properties">
+        <ResponseField name="questionId" type="string">
+          Question identifier
+        </ResponseField>
+        
+        <ResponseField name="isCorrect" type="boolean">
+          Whether the answer was correct
+        </ResponseField>
+        
+        <ResponseField name="correctAnswer" type="string">
+          The correct answer
+        </ResponseField>
+        
+        <ResponseField name="userAnswer" type="string">
+          What the player answered
+        </ResponseField>
+        
+        <ResponseField name="points" type="number">
+          Points earned for this answer
+        </ResponseField>
+        
+        <ResponseField name="timeRemaining" type="number">
+          Time remaining when answered
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="totalScore" type="number">
+      Player's cumulative score so far
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```javascript
+socket.on('duel:questionResult', (data) => {
+  console.log(`Correct answer: ${data.correctAnswer}`);
+  
+  data.results.forEach(result => {
+    console.log(`${result.username}: ${result.answer.isCorrect ? 'Correct' : 'Incorrect'}`);
+    console.log(`  Answer: ${result.answer.userAnswer}`);
+    console.log(`  Points: ${result.answer.points}`);
+    console.log(`  Total Score: ${result.totalScore}`);
+  });
+  
+  // Wait for next question or final results
+});
+```
+
+### `duel:finished`
+
+The duel has ended. Final results and winner announcement.
+
+<ResponseField name="reason" type="string">
+  How the duel ended: `completed`, `opponent_disconnected`, or `cancelled`
+</ResponseField>
+
+<ResponseField name="winnerId" type="string | null">
+  ID of the winning player, or `null` for a draw
+</ResponseField>
+
+<ResponseField name="isDraw" type="boolean">
+  Whether the duel ended in a draw (only true when both players tied in a completed duel)
+</ResponseField>
+
+<ResponseField name="results" type="array">
+  Final results for both players
+  
+  <Expandable title="FinalResult properties">
+    <ResponseField name="userId" type="string">
+      Player's unique identifier
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      Player's display name
+    </ResponseField>
+    
+    <ResponseField name="score" type="number">
+      Player's final score
+    </ResponseField>
+    
+    <ResponseField name="correctCount" type="number">
+      Number of correct answers
+    </ResponseField>
+    
+    <ResponseField name="isWinner" type="boolean">
+      Whether this player won
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```javascript
+socket.on('duel:finished', (data) => {
+  if (data.isDraw) {
+    console.log('Draw!');
+  } else if (data.winnerId === currentUserId) {
+    console.log('You won!');
+  } else {
+    console.log('You lost!');
+  }
+  
+  console.log('Final Results:');
+  data.results.forEach(result => {
+    console.log(`${result.username}: ${result.score} points (${result.correctCount} correct)`);
+  });
+  
+  console.log(`Reason: ${data.reason}`);
+});
+```
+
+### `pong`
+
+Response to ping (connection keepalive).
+
+```javascript
+socket.on('pong', () => {
+  console.log('Connection alive');
+});
+```
+
+## Complete Gameplay Example
+
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('wss://api.geochallenge.com', {
+  auth: { token: localStorage.getItem('jwt') }
+});
+
+let currentQuestionId = null;
+
+// Receive question
+socket.on('duel:question', (data) => {
+  currentQuestionId = data.question.id;
+  
+  console.log(`Question ${data.questionIndex + 1}/${data.totalQuestions}`);
+  displayQuestion(data.question, data.timeLimit);
+});
+
+// Submit answer
+function submitAnswer(selectedAnswer, timeLeft) {
+  socket.emit('duel:answer', {
+    questionId: currentQuestionId,
+    answer: selectedAnswer,
+    timeRemaining: timeLeft
+  });
+}
+
+// Show who answered
+socket.on('duel:playerAnswered', (data) => {
+  showPlayerAnswered(data.userId);
+});
+
+// Show results
+socket.on('duel:questionResult', (data) => {
+  console.log(`Correct answer: ${data.correctAnswer}`);
+  displayResults(data.results);
+});
+
+// Handle finish
+socket.on('duel:finished', (data) => {
+  if (data.isDraw) {
+    showDrawScreen();
+  } else {
+    const won = data.winnerId === currentUserId;
+    showEndScreen(won, data.results);
+  }
+});
+
+// Keepalive
+setInterval(() => {
+  socket.emit('ping');
+}, 30000);
+
+socket.on('pong', () => {
+  console.log('Connection healthy');
+});
+```
+
+## Tiebreaking Rules
+
+When players have the same score at the end of a duel:
+
+1. Compare total time remaining across all answers (higher is better)
+2. If still tied, the duel is declared a draw
+
+Time remaining is tracked per answer via the `timeRemaining` field, so answer quickly for better tiebreak chances.

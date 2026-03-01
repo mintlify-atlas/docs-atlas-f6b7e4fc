@@ -1,0 +1,168 @@
+---
+title: Welcome to GeoChallenge
+description: Test your geography knowledge through flags, capitals, maps, and country silhouettes in solo and multiplayer modes
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.png"
+  alt="GeoChallenge Hero"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.png"
+  alt="GeoChallenge Hero"
+/>
+
+## Welcome to GeoChallenge
+
+GeoChallenge is a real-time geography trivia game that tests your knowledge of world geography through interactive challenges. Whether you're identifying flags, locating countries on a map, naming capitals, or recognizing country silhouettes, GeoChallenge offers an engaging way to learn and compete.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get up and running with GeoChallenge in minutes
+  </Card>
+  <Card
+    title="Architecture"
+    icon="building"
+    href="/architecture"
+  >
+    Understand the technical foundation and tech stack
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api/auth/register"
+  >
+    Explore the REST API and WebSocket events
+  </Card>
+  <Card
+    title="Game Modes"
+    icon="gamepad"
+    href="/features/game-modes"
+  >
+    Learn about single player, duels, and challenges
+  </Card>
+</CardGroup>
+
+## Key Features
+
+### Multiple Question Categories
+
+GeoChallenge offers five distinct question categories to test different aspects of your geography knowledge:
+
+<AccordionGroup>
+  <Accordion title="Flags" icon="flag">
+    Identify countries by their national flags. Each flag question presents you with a flag image and four country options. Perfect for visual learners and vexillology enthusiasts.
+  </Accordion>
+  
+  <Accordion title="Capitals" icon="landmark">
+    Test your knowledge of world capitals. Given a country, identify its capital city from multiple choices. Essential knowledge for any geography buff.
+  </Accordion>
+  
+  <Accordion title="Maps" icon="map">
+    Click on an interactive map to locate specific countries. Uses Leaflet for smooth pan and zoom controls, with distance-based scoring for accuracy.
+  </Accordion>
+  
+  <Accordion title="Silhouettes" icon="image">
+    Recognize countries by their distinctive shapes and outlines. A unique challenge that tests your spatial memory and geographical awareness.
+  </Accordion>
+  
+  <Accordion title="Mixed" icon="dice">
+    A randomized combination of all categories. The ultimate test that keeps you on your toes with varied question types.
+  </Accordion>
+</AccordionGroup>
+
+### Three Game Modes
+
+<CardGroup cols={3}>
+  <Card title="Single Player" icon="user">
+    Play solo through 10 questions at your own pace. Perfect for practice and building your high score.
+  </Card>
+  <Card title="Duels" icon="swords">
+    Real-time 1v1 matches against other players. Fast-paced competition with live matchmaking via Socket.IO.
+  </Card>
+  <Card title="Challenges" icon="trophy">
+    Create custom challenges to compete with friends asynchronously. Share challenge links and compare scores.
+  </Card>
+</CardGroup>
+
+## How Scoring Works
+
+<Note>
+  GeoChallenge uses a dynamic scoring system that rewards both accuracy and speed.
+</Note>
+
+Each correct answer is worth up to **150 points**:
+- **Base points**: 100 points for a correct answer
+- **Time bonus**: Up to 50 additional points based on how quickly you answer
+- **Map questions**: Distance-based scoring with closer guesses earning more points
+
+```typescript
+// Scoring calculation from backend
+const basePoints = 100;
+const maxTimeBonus = 50;
+const timeBonus = Math.floor((timeRemaining / totalTime) * maxTimeBonus);
+const totalPoints = basePoints + timeBonus;
+```
+
+## Mobile-First Design
+
+GeoChallenge is built with a mobile-first philosophy, ensuring an optimal experience on all devices:
+
+- **Responsive layout** using Tailwind CSS with `dvh` units for proper mobile viewport handling
+- **Touch-optimized** interactions with swipe gestures for category selection
+- **Safe area insets** for devices with notches and dynamic islands
+- **Offline-ready** with PWA support and service workers
+- **Dark mode** with automatic theme detection via `prefers-color-scheme`
+
+## Real-Time Multiplayer
+
+Powered by Socket.IO, GeoChallenge delivers seamless real-time multiplayer experiences:
+
+- **Instant matchmaking** for duels based on selected category
+- **Live updates** during head-to-head matches
+- **Synchronized questions** ensuring fair competition
+- **Graceful disconnection handling** with timeout mechanisms
+- **Redis-backed** session management for scalability
+
+## Tech Highlights
+
+<CardGroup cols={2}>
+  <Card title="React + Vite" icon="react">
+    Modern frontend with fast HMR and optimized production builds
+  </Card>
+  <Card title="Express + Prisma" icon="server">
+    Type-safe backend with PostgreSQL database
+  </Card>
+  <Card title="Socket.IO" icon="bolt">
+    Real-time bidirectional event-based communication
+  </Card>
+  <Card title="Redis" icon="database">
+    High-performance caching and session storage
+  </Card>
+</CardGroup>
+
+## What's Next?
+
+<Steps>
+  <Step title="Get Started">
+    Head to the [Quickstart Guide](/quickstart) to create your account and play your first game
+  </Step>
+  <Step title="Explore Architecture">
+    Dive into the [Architecture Overview](/architecture) to understand how GeoChallenge is built
+  </Step>
+  <Step title="Learn the API">
+    Check out the [API Reference](/api/auth/register) to integrate or extend GeoChallenge
+  </Step>
+</Steps>
+
+---
+
+<Tip>
+  GeoChallenge is actively developed with continuous improvements. The current frontend version is **v1.2.71** with optimized mobile layouts and enhanced UX.
+</Tip>

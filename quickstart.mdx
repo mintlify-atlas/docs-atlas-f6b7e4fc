@@ -1,80 +1,315 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start Guide
+description: Get up and running with GeoChallenge in minutes - from account creation to playing your first game
 ---
 
-## Get started in three steps
+## Welcome!
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide will walk you through everything you need to start playing GeoChallenge, from creating your account to completing your first game.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  GeoChallenge is a web-based application that works on any modern browser. No installation required!
 </Note>
+
+## Create Your Account
+
+Getting started with GeoChallenge is quick and easy.
+
+<Steps>
+  <Step title="Navigate to Registration">
+    Visit the GeoChallenge homepage and click **"Get Started"** or navigate directly to `/register`.
+  </Step>
+  
+  <Step title="Fill in Your Details">
+    Provide a username, email, and password. All fields are required.
+    
+    <Info>
+      **Password requirements**: Your password should be strong and unique. We use bcrypt hashing to securely store credentials.
+    </Info>
+  </Step>
+  
+  <Step title="Complete Registration">
+    Click **"Sign Up"** to create your account. You'll be automatically logged in and redirected to the main menu.
+  </Step>
+</Steps>
+
+### Registration Example
+
+The registration flow uses schema validation with Zod for client-side validation:
+
+```typescript
+// From frontend/src/context/AuthContext.tsx
+const register = async (username: string, email: string, password: string) => {
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedUsername = username.trim();
+  
+  const response = await api.register(
+    normalizedUsername,
+    normalizedEmail,
+    password
+  );
+  
+  setToken(response.token);
+  setState({
+    user: response.user,
+    token: response.token,
+    isLoading: false,
+    isAuthenticated: true,
+  });
+};
+```
+
+## Logging In
+
+If you already have an account, logging in is straightforward:
+
+<Steps>
+  <Step title="Navigate to Login">
+    Click **"Login"** from the homepage or go to `/login`.
+  </Step>
+  
+  <Step title="Enter Credentials">
+    Provide your email and password. Both fields support auto-complete for convenience.
+  </Step>
+  
+  <Step title="Access Your Account">
+    Click **"Log In"** to authenticate. Upon successful login, you'll be taken to the game menu.
+  </Step>
+</Steps>
+
+<Warning>
+  Login attempts are rate-limited to prevent brute-force attacks. If you see an error message with `retryAfterSeconds`, wait the specified duration before trying again.
+</Warning>
+
+## Choosing Your Category
+
+Once logged in, you'll see the **Menu** page with five category options:
+
+<CardGroup cols={2}>
+  <Card title="🏳️ Flags" icon="flag">
+    Identify countries by their national flags
+  </Card>
+  <Card title="🏛️ Capitals" icon="landmark">
+    Match countries to their capital cities
+  </Card>
+  <Card title="🗺️ Maps" icon="map">
+    Locate countries on an interactive map
+  </Card>
+  <Card title="🖼️ Silhouettes" icon="image">
+    Recognize countries by their shapes
+  </Card>
+  <Card title="🎲 Mixed" icon="shuffle">
+    Random mix of all question types
+  </Card>
+</CardGroup>
+
+### Category Selection Features
+
+- **Swipe gestures**: On mobile, swipe left or right to navigate categories
+- **Remembered preference**: Your last selected category is saved to `localStorage`
+- **Visual feedback**: The active category is highlighted with a distinct style
+
+```tsx
+// From frontend/src/pages/MenuPage.tsx
+const [selectedCategory, setSelectedCategory] = useLocalStorage<Category>(
+  'geochallenge:last-category',
+  'MIXED',
+  categorySerializer,
+);
+```
+
+## Playing Your First Game
+
+Let's walk through a complete single-player game.
+
+<Steps>
+  <Step title="Select a Game Mode">
+    From the menu, choose **"Single Player"** under your selected category. This starts a solo game with 10 questions.
+    
+    <Tip>
+      Single player mode is perfect for practice and doesn't require waiting for other players.
+    </Tip>
+  </Step>
+  
+  <Step title="Answer Questions">
+    Each question presents four options (A, B, C, D). Tap an option to select it, then tap **"Confirm"** to submit your answer.
+    
+    **Keyboard shortcuts** (desktop only):
+    - Press `A`, `B`, `C`, or `D` to select an option
+    - Press `Enter` to confirm or advance to the next question
+    
+    <Note>
+      You have 10 seconds per question. A timer at the top shows your remaining time. Faster answers earn bonus points!
+    </Note>
+  </Step>
+  
+  <Step title="Track Your Progress">
+    A progress bar at the top shows which question you're on (1-10) and marks correct/incorrect answers with visual indicators.
+  </Step>
+  
+  <Step title="Review Feedback">
+    After confirming, you'll see whether you were correct:
+    - ✓ **Correct**: The right answer is highlighted in green
+    - ✕ **Incorrect**: Your choice is marked red, and the correct answer is shown in green
+    
+    Click **"Next"** to proceed to the next question.
+  </Step>
+  
+  <Step title="View Your Results">
+    After completing all 10 questions, you'll see your final score, accuracy percentage, and detailed breakdown.
+    
+    From the results screen, you can:
+    - **Play Again**: Start a new game in the same category
+    - **View Rankings**: See how you compare to other players
+    - **Back to Menu**: Choose a different category or game mode
+  </Step>
+</Steps>
+
+## Understanding the Game Interface
+
+### Single Player Layout
+
+The game screen uses a **mobile-first, zero-scroll layout** designed to fit the entire question on screen:
+
+```tsx
+// From frontend/src/components/GameRoundScaffold.tsx
+// Universal layout structure for all game modes
+<div className="universal-game-layout">
+  <header>
+    {/* Timer, Score, Progress */}
+  </header>
+  
+  <main>
+    {/* Question Card */}
+    {/* Answer Options */}
+  </main>
+  
+  <footer>
+    {/* Confirm/Next Actions */}
+  </footer>
+</div>
+```
+
+### Map Questions
+
+Map questions provide an interactive Leaflet map:
+
+1. **Pan and zoom** to find the target country
+2. **Click** on the map to place your guess
+3. **Confirm** your selection
+
+Scoring is based on distance from the correct location:
+
+```typescript
+// Distance-based scoring for map questions
+if (distance <= 100) {
+  score = basePoints + maxTimeBonus; // Perfect score
+} else if (distance <= 500) {
+  score = Math.floor(basePoints * 0.8);
+} else if (distance <= 1000) {
+  score = Math.floor(basePoints * 0.6);
+} else {
+  score = Math.floor(basePoints * 0.3);
+}
+```
+
+## Playing Multiplayer
+
+Ready for some competition? Try a **Duel** or **Challenge**.
+
+### Duels (Real-Time 1v1)
+
+<Steps>
+  <Step title="Join Matchmaking">
+    Click **"Duel"** from the menu. GeoChallenge will search for an available opponent in your selected category.
+    
+    <Info>
+      You can cancel matchmaking at any time without penalty by clicking "Leave Queue".
+    </Info>
+  </Step>
+  
+  <Step title="Compete Head-to-Head">
+    Once matched, you'll both receive the same questions. Answer as quickly and accurately as possible to outscore your opponent.
+    
+    Both players see live updates during the match via Socket.IO.
+  </Step>
+  
+  <Step title="View Match Results">
+    After all questions are answered, see the final scores and who won. Your stats (wins/losses) are automatically updated.
+  </Step>
+</Steps>
+
+### Challenges (Asynchronous)
+
+<Steps>
+  <Step title="Create a Challenge">
+    Click **"Challenges"** from the menu, then **"Create Challenge"**. Choose your categories and settings.
+  </Step>
+  
+  <Step title="Share the Link">
+    Copy the challenge link and send it to friends. They can join and complete the challenge at their convenience.
+  </Step>
+  
+  <Step title="Compare Scores">
+    View all participants' scores once everyone has completed the challenge. The highest scorer wins!
+  </Step>
+</Steps>
+
+## Tips for Success
+
+<AccordionGroup>
+  <Accordion title="Master the Keyboard Shortcuts" icon="keyboard">
+    On desktop, use `A`/`B`/`C`/`D` to quickly select answers and `Enter` to confirm. This shaves precious seconds off your time.
+  </Accordion>
+  
+  <Accordion title="Study Regional Patterns" icon="globe">
+    Many flags and shapes follow regional patterns (e.g., Pan-African colors, Nordic crosses). Learning these patterns helps immensely.
+  </Accordion>
+  
+  <Accordion title="Practice with Mixed Mode" icon="shuffle">
+    Mixed mode keeps you sharp across all question types and better prepares you for duels where you can't predict the category.
+  </Accordion>
+  
+  <Accordion title="Speed vs. Accuracy" icon="gauge">
+    While speed bonuses are valuable, a correct answer always beats a fast wrong one. Aim for 80%+ accuracy before optimizing for speed.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Explore Game Modes"
+    icon="gamepad"
+    href="/features/game-modes"
+  >
+    Deep dive into single player, duels, and challenges
+  </Card>
+  <Card
+    title="View Rankings"
+    icon="ranking-star"
+    href="/features/leaderboards"
+  >
+    See the leaderboard and track your progress
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api/auth/register"
+  >
+    Integrate with the GeoChallenge API
+  </Card>
+  <Card
+    title="Architecture"
+    icon="building"
+    href="/architecture"
+  >
+    Learn how GeoChallenge is built
+  </Card>
+</CardGroup>
+
+---
+
+<Check>
+  **You're all set!** You now know everything you need to start playing GeoChallenge. Jump into the game and test your geography knowledge.
+</Check>

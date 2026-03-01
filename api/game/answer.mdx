@@ -1,0 +1,228 @@
+---
+title: "Validate Answer"
+api: "POST /api/game/answer"
+description: "Validate a single answer and calculate points"
+---
+
+## Endpoint
+
+```
+POST /api/game/answer
+```
+
+Validates a user's answer for a specific question and calculates the score based on correctness, time remaining, and distance (for MAP questions).
+
+## Request Body
+
+<ParamField body="questionId" type="string" required>
+  The unique identifier of the question being answered
+</ParamField>
+
+<ParamField body="answer" type="string" required>
+  The user's answer (must match one of the question's options)
+</ParamField>
+
+<ParamField body="timeRemaining" type="number" required>
+  Time remaining when answer was submitted (in seconds)
+  - Minimum: 0
+  - Maximum: `config.game.timePerQuestion` (typically 10 seconds)
+</ParamField>
+
+<ParamField body="coordinates" type="object" optional>
+  User's clicked coordinates (required for MAP category questions)
+  
+  <ParamField body="lat" type="number">
+    Latitude of the clicked location
+  </ParamField>
+  
+  <ParamField body="lng" type="number">
+    Longitude of the clicked location
+  </ParamField>
+</ParamField>
+
+## Response
+
+<ResponseField name="questionId" type="string">
+  The question ID that was answered
+</ResponseField>
+
+<ResponseField name="isCorrect" type="boolean">
+  Whether the answer was correct
+  - For multiple choice: exact match with `correctAnswer` (case-insensitive)
+  - For MAP questions: distance < 500km from target location
+</ResponseField>
+
+<ResponseField name="correctAnswer" type="string">
+  The correct answer for this question
+</ResponseField>
+
+<ResponseField name="userAnswer" type="string">
+  The answer provided by the user
+</ResponseField>
+
+<ResponseField name="points" type="number">
+  Total points earned for this answer
+  - Calculated using scoring formulas from `scoring.ts`
+  - 0 points for incorrect answers
+</ResponseField>
+
+<ResponseField name="timeBonus" type="number">
+  Bonus points earned for fast response
+  - Calculated as: `(timeRemaining / totalTime) * maxTimeBonus`
+  - Only awarded for correct answers
+  - See `scoring.ts:15-22` for implementation
+</ResponseField>
+
+<ResponseField name="distance" type="number" optional>
+  Distance in kilometers between user's click and correct location (only for MAP questions)
+  - Calculated using Haversine formula (see `haversine.js`)
+</ResponseField>
+
+<ResponseField name="timeRemaining" type="number">
+  Time remaining (clamped to minimum of 0)
+</ResponseField>
+
+## Scoring Logic
+
+### Multiple Choice Questions (FLAG, CAPITAL, SILHOUETTE)
+
+Implemented in `scoring.ts:30-33`:
+
+```javascript
+if (isCorrect) {
+  points = basePoints + timeBonus
+} else {
+  points = 0
+}
+```
+
+- **Base Points**: `config.game.basePoints` (typically 100)
+- **Time Bonus**: `0 - config.game.maxTimeBonus` based on speed
+- **Total Range**: 0 to 150 points (100 base + 50 max bonus)
+
+### MAP Questions
+
+Implemented in `scoring.ts:38-52`:
+
+```javascript
+const accuracyFactor = 1 - (distanceKm / maxDistanceKm)
+const accuracyPoints = basePoints * accuracyFactor
+const timePoints = timeBonus * accuracyFactor
+totalPoints = accuracyPoints + timePoints
+```
+
+- **Distance Threshold**: 500km for "correct" status
+- **Max Distance**: 2000km (beyond this = 0 points)
+- **Accuracy Factor**: Linear scale from distance
+- **Points**: Both base and time bonus are scaled by accuracy
+
+## Error Responses
+
+### Invalid Request Body (400)
+
+```json
+{
+  "error": "Datos inválidos",
+  "details": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "received": "undefined",
+      "path": ["questionId"]
+    }
+  ]
+}
+```
+
+### Question Not Found (500)
+
+If the `questionId` doesn't exist in the database, the service throws an error:
+
+```json
+{
+  "error": "Error interno del servidor"
+}
+```
+
+## Example Requests
+
+### Multiple Choice Answer
+
+```bash
+curl -X POST https://api.geochallenge.com/api/game/answer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "questionId": "clx1234567890",
+    "answer": "España",
+    "timeRemaining": 7.5
+  }'
+```
+
+### MAP Question Answer
+
+```bash
+curl -X POST https://api.geochallenge.com/api/game/answer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "questionId": "clx0987654321",
+    "answer": "Japón",
+    "timeRemaining": 5.2,
+    "coordinates": {
+      "lat": 35.6895,
+      "lng": 139.6917
+    }
+  }'
+```
+
+## Example Responses
+
+### Correct Answer (Fast Response)
+
+```json
+{
+  "questionId": "clx1234567890",
+  "isCorrect": true,
+  "correctAnswer": "España",
+  "userAnswer": "España",
+  "points": 137,
+  "timeBonus": 37,
+  "timeRemaining": 7.5
+}
+```
+
+### Incorrect Answer
+
+```json
+{
+  "questionId": "clx1234567890",
+  "isCorrect": false,
+  "correctAnswer": "España",
+  "userAnswer": "Portugal",
+  "points": 0,
+  "timeBonus": 0,
+  "timeRemaining": 3.2
+}
+```
+
+### MAP Question (Close Guess)
+
+```json
+{
+  "questionId": "clx0987654321",
+  "isCorrect": true,
+  "correctAnswer": "Japón",
+  "userAnswer": "Japón",
+  "points": 142,
+  "timeBonus": 26,
+  "distance": 125.3,
+  "timeRemaining": 5.2
+}
+```
+
+## Implementation Details
+
+- Answer validation uses case-insensitive string comparison with trimming (see `game.service.ts:148`)
+- Distance calculation uses the Haversine formula for great-circle distance
+- MAP questions are considered "correct" if distance < 500km (see `game.service.ts:145`)
+- Time bonus is always multiplied by accuracy factor for MAP questions to reward precision
+- Authentication is optional - works for both guest and authenticated users

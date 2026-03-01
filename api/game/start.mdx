@@ -1,0 +1,180 @@
+---
+title: "Start Game"
+api: "GET /api/game/start"
+description: "Initialize a new game session and receive questions"
+---
+
+## Endpoint
+
+```
+GET /api/game/start
+```
+
+Starts a new game session by fetching random questions based on the specified category and count. This endpoint can be used by both authenticated and guest users.
+
+## Query Parameters
+
+<ParamField query="category" type="Category" default="MIXED">
+  The question category for the game. Available values:
+  - `FLAG` - Flag identification questions
+  - `CAPITAL` - Capital city questions
+  - `MAP` - Location-based map questions
+  - `SILHOUETTE` - Country silhouette questions
+  - `MIXED` - Mix of all categories
+</ParamField>
+
+<ParamField query="questionCount" type="number" default="10">
+  Number of questions to include in the game.
+  - Minimum: 5
+  - Maximum: 20
+  - Default: 10 (from `config.game.questionsPerGame`)
+</ParamField>
+
+## Response
+
+<ResponseField name="message" type="string">
+  Success message confirming game started
+</ResponseField>
+
+<ResponseField name="gameConfig" type="object">
+  Game configuration settings
+  
+  <ResponseField name="questionsCount" type="number">
+    Total number of questions in this game
+  </ResponseField>
+  
+  <ResponseField name="timePerQuestion" type="number">
+    Time limit per question in seconds (from `config.game.timePerQuestion`)
+  </ResponseField>
+  
+  <ResponseField name="category" type="Category">
+    The category for this game session
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="questions" type="array">
+  Array of question objects for the game
+  
+  <ResponseField name="id" type="string">
+    Unique question identifier
+  </ResponseField>
+  
+  <ResponseField name="category" type="Category">
+    Question category type
+  </ResponseField>
+  
+  <ResponseField name="questionText" type="string">
+    The question text displayed to the user. Generated dynamically based on category:
+    - **FLAG**: "¿A qué país pertenece esta bandera?"
+    - **CAPITAL**: "¿Cuál es la capital de [country]?" or "[capital] es la capital de..."
+    - **MAP**: "¿Dónde se encuentra [location]?"
+    - **SILHOUETTE**: "¿Qué país representa esta silueta?"
+  </ResponseField>
+  
+  <ResponseField name="options" type="string[]">
+    Array of answer options (shuffled using Fisher-Yates algorithm)
+  </ResponseField>
+  
+  <ResponseField name="correctAnswer" type="string">
+    The correct answer (included in response for validation)
+  </ResponseField>
+  
+  <ResponseField name="difficulty" type="string" optional>
+    Question difficulty level: `EASY`, `MEDIUM`, or `HARD`
+  </ResponseField>
+  
+  <ResponseField name="questionData" type="string" optional>
+    Additional context data (e.g., country name for capitals)
+  </ResponseField>
+  
+  <ResponseField name="imageUrl" type="string" optional>
+    URL for flag or silhouette image (only for FLAG and SILHOUETTE categories)
+  </ResponseField>
+  
+  <ResponseField name="latitude" type="number" optional>
+    Latitude coordinate (only for MAP category questions)
+  </ResponseField>
+  
+  <ResponseField name="longitude" type="number" optional>
+    Longitude coordinate (only for MAP category questions)
+  </ResponseField>
+</ResponseField>
+
+## Error Responses
+
+### Insufficient Questions (503)
+
+```json
+{
+  "error": "No hay suficientes preguntas disponibles",
+  "available": 8,
+  "requested": 10
+}
+```
+
+Returned when the database doesn't have enough questions for the requested category.
+
+### Invalid Parameters (400)
+
+```json
+{
+  "error": "Parámetros inválidos",
+  "details": [
+    {
+      "code": "too_big",
+      "maximum": 20,
+      "path": ["questionCount"]
+    }
+  ]
+}
+```
+
+## Example Request
+
+```bash
+curl -X GET "https://api.geochallenge.com/api/game/start?category=FLAG&questionCount=10"
+```
+
+## Example Response
+
+```json
+{
+  "message": "Partida iniciada",
+  "gameConfig": {
+    "questionsCount": 10,
+    "timePerQuestion": 10,
+    "category": "FLAG"
+  },
+  "questions": [
+    {
+      "id": "clx1234567890",
+      "category": "FLAG",
+      "questionText": "¿A qué país pertenece esta bandera?",
+      "options": ["España", "Francia", "Italia", "Portugal"],
+      "correctAnswer": "España",
+      "difficulty": "MEDIUM",
+      "questionData": "España",
+      "imageUrl": "https://cdn.geochallenge.com/flags/es.png"
+    },
+    {
+      "id": "clx0987654321",
+      "category": "MAP",
+      "questionText": "¿Dónde se encuentra Tokyo?",
+      "options": ["Japón", "China", "Corea del Sur", "Tailandia"],
+      "correctAnswer": "Japón",
+      "difficulty": "EASY",
+      "questionData": "Tokyo",
+      "latitude": 35.6762,
+      "longitude": 139.6503
+    }
+  ]
+}
+```
+
+## Implementation Notes
+
+- Questions are randomly selected using `selectRandom()` from `scoring.ts:69`
+- For `MIXED` category, questions are fetched from all four categories and combined (see `game.service.ts:60-73`)
+- Answer options are shuffled client-side using Fisher-Yates algorithm to prevent answer patterns
+- Authentication is optional - guest users can play without an account
+- Question selection excludes previously used IDs via the `excludeIds` parameter in the service layer

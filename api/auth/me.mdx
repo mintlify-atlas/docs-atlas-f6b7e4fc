@@ -1,0 +1,203 @@
+---
+title: "Get Current User"
+api: "GET /api/auth/me"
+description: "Retrieve the authenticated user's profile"
+---
+
+Returns the profile information for the currently authenticated user based on the JWT token.
+
+## Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+  
+  Format: `Bearer {token}`
+  
+  The token should be obtained from the [/api/auth/login](/api/auth/login) or [/api/auth/register](/api/auth/register) endpoints.
+</ParamField>
+
+## Response
+
+<ResponseField name="user" type="object">
+  The authenticated user's profile information
+  
+  <ResponseField name="id" type="string">
+    Unique user identifier (CUID)
+  </ResponseField>
+  
+  <ResponseField name="username" type="string">
+    User's username
+  </ResponseField>
+  
+  <ResponseField name="email" type="string">
+    User's email address
+  </ResponseField>
+  
+  <ResponseField name="preferredLanguage" type="string">
+    User's language preference
+    - Possible values: `es`, `en`
+  </ResponseField>
+  
+  <ResponseField name="highScore" type="number">
+    User's highest score achieved across all games
+  </ResponseField>
+  
+  <ResponseField name="gamesPlayed" type="number">
+    Total number of games the user has completed
+  </ResponseField>
+  
+  <ResponseField name="wins" type="number">
+    Number of games won (challenges/duels)
+  </ResponseField>
+  
+  <ResponseField name="losses" type="number">
+    Number of games lost (challenges/duels)
+  </ResponseField>
+  
+  <ResponseField name="createdAt" type="string">
+    ISO 8601 timestamp of when the account was created
+  </ResponseField>
+</ResponseField>
+
+## Error Responses
+
+### 401 Unauthorized - No Token
+
+```json
+{
+  "error": "Token de autenticación requerido"
+}
+```
+
+Returned when the `Authorization` header is missing or doesn't start with "Bearer ".
+
+### 401 Unauthorized - Expired Token
+
+```json
+{
+  "error": "Token expirado"
+}
+```
+
+Returned when the JWT token has expired. The user needs to log in again.
+
+### 403 Forbidden - Invalid Token
+
+```json
+{
+  "error": "Token inválido"
+}
+```
+
+Returned when the token signature is invalid or the token is malformed.
+
+### 404 Not Found - User Not Found
+
+```json
+{
+  "error": "Usuario no encontrado"
+}
+```
+
+Returned when the user ID from the token doesn't exist in the database (rare case, may occur if user was deleted).
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "Error interno del servidor"
+}
+```
+
+## Example
+
+<CodeGroup>
+
+```bash curl
+curl -X GET https://api.geochallenge.com/api/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+```javascript JavaScript
+const token = localStorage.getItem('authToken');
+
+const response = await fetch('https://api.geochallenge.com/api/auth/me', {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+const data = await response.json();
+const user = data.user;
+```
+
+```python Python
+import requests
+
+token = "your_jwt_token_here"
+
+response = requests.get(
+    'https://api.geochallenge.com/api/auth/me',
+    headers={
+        'Authorization': f'Bearer {token}'
+    }
+)
+
+data = response.json()
+user = data['user']
+```
+
+</CodeGroup>
+
+### Response
+
+```json
+{
+  "user": {
+    "id": "clx9k2j3h0000xyz123abc456",
+    "username": "explorer_2024",
+    "email": "user@example.com",
+    "preferredLanguage": "en",
+    "highScore": 8500,
+    "gamesPlayed": 42,
+    "wins": 28,
+    "losses": 14,
+    "createdAt": "2026-02-15T10:30:00.000Z"
+  }
+}
+```
+
+## JWT Token Structure
+
+The JWT token contains the following claims:
+
+```json
+{
+  "userId": "clx9k2j3h0000xyz123abc456",
+  "username": "explorer_2024",
+  "email": "user@example.com",
+  "iat": 1743501000,
+  "exp": 1743587400
+}
+```
+
+- `iat`: Issued at timestamp
+- `exp`: Expiration timestamp
+
+## Use Cases
+
+- Verify that the user's token is still valid
+- Fetch fresh user profile data after login
+- Check user stats before starting a game
+- Populate user interface with current user information
+- Validate authentication state on app initialization
+
+## Notes
+
+- This endpoint is protected by the `authenticateJWT` middleware
+- The user ID is extracted from the JWT token payload
+- If the token is valid but the user was deleted, a 404 error is returned
+- Token expiration is validated before the user lookup
+- This endpoint does NOT return the `passwordHash` field for security reasons
+- Stats like `highScore`, `wins`, and `losses` are updated by the game and challenge endpoints

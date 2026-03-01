@@ -1,0 +1,348 @@
+---
+title: "Get Challenge Results"
+api: "GET /api/challenges/:id/results"
+description: "Retrieve detailed results and final standings for a completed or in-progress challenge"
+---
+
+## Authentication
+
+Requires JWT authentication via `Authorization: Bearer <token>` header.
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The unique challenge identifier (CUID)
+</ParamField>
+
+## Response
+
+<ResponseField name="challenge" type="object">
+  Complete challenge object with all participant results
+  
+  <ResponseField name="id" type="string">
+    Challenge identifier
+  </ResponseField>
+  
+  <ResponseField name="status" type="string">
+    Current status.
+    
+    Possible values:
+    - `PENDING` - Waiting for players to join
+    - `ACCEPTED` - Players joined, game in progress
+    - `COMPLETED` - All players finished
+    - `EXPIRED` - Challenge expired
+  </ResponseField>
+  
+  <ResponseField name="categories" type="string[]">
+    Challenge categories (MAP, FLAG, CAPITAL, SILHOUETTE, MIXED)
+  </ResponseField>
+  
+  <ResponseField name="maxPlayers" type="number">
+    Maximum player capacity
+  </ResponseField>
+  
+  <ResponseField name="answerTimeSeconds" type="number">
+    Time limit per question (10, 20, or 30)
+  </ResponseField>
+  
+  <ResponseField name="creator" type="object">
+    Challenge creator
+    
+    <ResponseField name="id" type="string">
+      Creator user ID
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      Creator username
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="participants" type="object[]">
+    Array of participants with scores, ordered by join time
+    
+    <ResponseField name="userId" type="string">
+      Participant user ID
+    </ResponseField>
+    
+    <ResponseField name="score" type="number | null">
+      Final score. `null` if the player hasn't completed yet.
+    </ResponseField>
+    
+    <ResponseField name="correctCount" type="number | null">
+      Number of correct answers. `null` if not completed.
+    </ResponseField>
+    
+    <ResponseField name="joinedAt" type="string">
+      ISO 8601 timestamp when the user joined
+    </ResponseField>
+    
+    <ResponseField name="completedAt" type="string | null">
+      ISO 8601 timestamp when completed. `null` if still in progress.
+    </ResponseField>
+    
+    <ResponseField name="user" type="object">
+      User information
+      
+      <ResponseField name="id" type="string">
+        User ID
+      </ResponseField>
+      
+      <ResponseField name="username" type="string">
+        Username
+      </ResponseField>
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="participantsCount" type="number">
+    Total number of participants
+  </ResponseField>
+  
+  <ResponseField name="isFull" type="boolean">
+    Whether max capacity is reached
+  </ResponseField>
+  
+  <ResponseField name="isUserParticipant" type="boolean">
+    Whether the requesting user is a participant
+  </ResponseField>
+  
+  <ResponseField name="isJoinable" type="boolean">
+    Whether the user can still join
+  </ResponseField>
+  
+  <ResponseField name="createdAt" type="string">
+    ISO 8601 timestamp when created
+  </ResponseField>
+  
+  <ResponseField name="expiresAt" type="string">
+    ISO 8601 timestamp when it expires (7 days from creation)
+  </ResponseField>
+  
+  <ResponseField name="completedAt" type="string | null">
+    ISO 8601 timestamp when all players finished. `null` if still in progress.
+  </ResponseField>
+  
+  <ResponseField name="winnerId" type="string | null">
+    User ID of the winner.
+    
+    - `null` if challenge not completed yet
+    - `null` if there's a tie for first place
+    - User ID of the highest scorer if there's a clear winner
+  </ResponseField>
+</ResponseField>
+
+## Example Request
+
+```bash
+curl https://api.geochallenge.com/api/challenges/clx1abc2def3ghi4jkl5 \
+  -H "Authorization: Bearer <token>"
+```
+
+## Example Response
+
+### Completed Challenge
+
+```json
+{
+  "challenge": {
+    "id": "clx1abc2def3ghi4jkl5",
+    "status": "COMPLETED",
+    "categories": ["FLAG", "CAPITAL"],
+    "maxPlayers": 4,
+    "answerTimeSeconds": 20,
+    "creator": {
+      "id": "clx1user123",
+      "username": "player1"
+    },
+    "participants": [
+      {
+        "userId": "clx1user123",
+        "score": 8500,
+        "correctCount": 9,
+        "joinedAt": "2026-03-01T12:00:00.000Z",
+        "completedAt": "2026-03-01T12:15:00.000Z",
+        "user": {
+          "id": "clx1user123",
+          "username": "player1"
+        }
+      },
+      {
+        "userId": "clx1user456",
+        "score": 7200,
+        "correctCount": 8,
+        "joinedAt": "2026-03-01T12:05:00.000Z",
+        "completedAt": "2026-03-01T12:20:00.000Z",
+        "user": {
+          "id": "clx1user456",
+          "username": "player2"
+        }
+      },
+      {
+        "userId": "clx1user789",
+        "score": 6800,
+        "correctCount": 7,
+        "joinedAt": "2026-03-01T12:08:00.000Z",
+        "completedAt": "2026-03-01T12:18:00.000Z",
+        "user": {
+          "id": "clx1user789",
+          "username": "player3"
+        }
+      }
+    ],
+    "participantsCount": 3,
+    "isFull": false,
+    "isUserParticipant": true,
+    "isJoinable": false,
+    "createdAt": "2026-03-01T12:00:00.000Z",
+    "expiresAt": "2026-03-08T12:00:00.000Z",
+    "completedAt": "2026-03-01T12:20:00.000Z",
+    "winnerId": "clx1user123"
+  }
+}
+```
+
+### In-Progress Challenge
+
+```json
+{
+  "challenge": {
+    "id": "clx1xyz9uvw8rst7",
+    "status": "ACCEPTED",
+    "categories": ["MAP"],
+    "maxPlayers": 3,
+    "answerTimeSeconds": 30,
+    "creator": {
+      "id": "clx1userA",
+      "username": "playerA"
+    },
+    "participants": [
+      {
+        "userId": "clx1userA",
+        "score": 7800,
+        "correctCount": 8,
+        "joinedAt": "2026-03-01T14:00:00.000Z",
+        "completedAt": "2026-03-01T14:12:00.000Z",
+        "user": {
+          "id": "clx1userA",
+          "username": "playerA"
+        }
+      },
+      {
+        "userId": "clx1userB",
+        "score": null,
+        "correctCount": null,
+        "joinedAt": "2026-03-01T14:02:00.000Z",
+        "completedAt": null,
+        "user": {
+          "id": "clx1userB",
+          "username": "playerB"
+        }
+      },
+      {
+        "userId": "clx1userC",
+        "score": null,
+        "correctCount": null,
+        "joinedAt": "2026-03-01T14:03:00.000Z",
+        "completedAt": null,
+        "user": {
+          "id": "clx1userC",
+          "username": "playerC"
+        }
+      }
+    ],
+    "participantsCount": 3,
+    "isFull": true,
+    "isUserParticipant": true,
+    "isJoinable": false,
+    "createdAt": "2026-03-01T14:00:00.000Z",
+    "expiresAt": "2026-03-08T14:00:00.000Z",
+    "completedAt": null,
+    "winnerId": null
+  }
+}
+```
+
+## Error Responses
+
+### 404 Not Found
+
+```json
+{
+  "error": "Desafío no encontrado"
+}
+```
+
+Returned when:
+- Challenge ID is invalid
+- User doesn't have access to this challenge
+
+### 401 Unauthorized
+
+Returned when the JWT token is missing or invalid.
+
+## Access Control
+
+Users can view results for a challenge if:
+- They are a participant in the challenge, OR
+- The challenge is in `PENDING` status and still joinable
+
+If the user is not a participant and the challenge is not joinable, a 404 error is returned.
+
+## Winner Determination
+
+The `winnerId` is calculated when the challenge status changes to `COMPLETED`:
+
+1. All participants are sorted by score (descending)
+2. The highest score is identified
+3. If multiple participants have the highest score (tie), `winnerId` is `null`
+4. If there's a single highest scorer, `winnerId` is set to their user ID
+
+## Stats Updates
+
+When a challenge is completed (all players finished), the following user stats are updated:
+
+- `gamesPlayed` - Incremented by 1 for all participants
+- `wins` - Incremented by 1 for the winner (if no tie)
+- `losses` - Incremented by 1 for non-winners (if there's a clear winner)
+- `highScore` - Updated if the participant's score exceeds their previous high score
+
+## Use Cases
+
+### Leaderboard Display
+
+Sort participants by score to display rankings:
+
+```javascript
+const sortedParticipants = challenge.participants
+  .filter(p => p.score !== null)
+  .sort((a, b) => b.score - a.score);
+```
+
+### Progress Tracking
+
+Check how many players have completed:
+
+```javascript
+const completedCount = challenge.participants.filter(p => p.completedAt !== null).length;
+const pendingCount = challenge.participantsCount - completedCount;
+```
+
+### Winner Announcement
+
+```javascript
+if (challenge.status === 'COMPLETED') {
+  if (challenge.winnerId) {
+    const winner = challenge.participants.find(p => p.userId === challenge.winnerId);
+    console.log(`Winner: ${winner.user.username} with ${winner.score} points!`);
+  } else {
+    console.log('It\'s a tie!');
+  }
+}
+```
+
+## Notes
+
+- This endpoint is mapped to `GET /api/challenges/:id` in the controller
+- Results can be viewed in real-time as players complete the challenge
+- Participants are always ordered by `joinedAt` (not by score)
+- The `correctCount` field shows how many of the 10 questions were answered correctly
+- Score calculation includes time bonuses, so higher `correctCount` doesn't always mean higher score

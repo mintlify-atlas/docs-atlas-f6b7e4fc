@@ -1,0 +1,261 @@
+---
+title: "Get Game Results"
+api: "GET /api/game/results/:id"
+description: "Retrieve detailed results for a completed game"
+---
+
+## Endpoint
+
+```
+GET /api/game/results/:id
+```
+
+Retrieves comprehensive results for a specific completed game, including answer breakdown, statistics, and high score status.
+
+<Note>
+This endpoint is inferred from the game flow. The actual implementation uses `POST /api/game/finish` to complete a game and return results. This documentation describes the expected result structure.
+</Note>
+
+## Path Parameters
+
+<ParamField path="id" type="string" required>
+  The unique game result ID (returned from the finish endpoint)
+</ParamField>
+
+## Authentication
+
+Requires JWT authentication. Include the token in the Authorization header:
+
+```
+Authorization: Bearer <token>
+```
+
+## Response
+
+<ResponseField name="message" type="string">
+  Success message ("Partida finalizada")
+</ResponseField>
+
+<ResponseField name="gameId" type="string">
+  Unique identifier for this game result
+</ResponseField>
+
+<ResponseField name="totalScore" type="number">
+  Sum of all points earned across all answers
+  - Calculated in `game.service.ts:172`
+</ResponseField>
+
+<ResponseField name="correctCount" type="number">
+  Number of correct answers in the game
+</ResponseField>
+
+<ResponseField name="totalQuestions" type="number">
+  Total number of questions answered
+</ResponseField>
+
+<ResponseField name="accuracy" type="number">
+  Percentage of correct answers (rounded)
+  - Formula: `(correctCount / totalQuestions) * 100`
+</ResponseField>
+
+<ResponseField name="isHighScore" type="boolean">
+  Whether this score is the user's new personal best
+  - Updates `user.highScore` if true (see `game.service.ts:194-200`)
+</ResponseField>
+
+<ResponseField name="details" type="array">
+  Array of individual answer results
+  
+  <ResponseField name="questionId" type="string">
+    The question identifier
+  </ResponseField>
+  
+  <ResponseField name="isCorrect" type="boolean">
+    Whether this answer was correct
+  </ResponseField>
+  
+  <ResponseField name="correctAnswer" type="string">
+    The correct answer for this question
+  </ResponseField>
+  
+  <ResponseField name="userAnswer" type="string">
+    The user's submitted answer
+  </ResponseField>
+  
+  <ResponseField name="points" type="number">
+    Points earned for this answer
+  </ResponseField>
+  
+  <ResponseField name="distance" type="number" optional>
+    Distance in km from target (MAP questions only)
+  </ResponseField>
+  
+  <ResponseField name="timeRemaining" type="number">
+    Time remaining when answer was submitted
+  </ResponseField>
+</ResponseField>
+
+## Related Endpoints
+
+### POST /api/game/finish
+
+This is the actual endpoint that creates and returns game results. It processes all answers and saves the game.
+
+**Request Body:**
+
+<ParamField body="answers" type="array" required>
+  Array of all answers submitted during the game
+  
+  <ParamField body="questionId" type="string">
+    Question identifier
+  </ParamField>
+  
+  <ParamField body="answer" type="string">
+    User's answer
+  </ParamField>
+  
+  <ParamField body="timeRemaining" type="number">
+    Time remaining in seconds
+  </ParamField>
+  
+  <ParamField body="coordinates" type="object" optional>
+    Coordinates for MAP questions
+  </ParamField>
+</ParamField>
+
+<ParamField body="category" type="Category" optional>
+  Game category (for statistics tracking)
+</ParamField>
+
+## Database Schema
+
+Game results are stored in the `GameResult` model (see `schema.prisma:47-61`):
+
+```prisma
+model GameResult {
+  id             String   @id @default(cuid())
+  userId         String
+  score          Int
+  correctCount   Int
+  totalQuestions Int
+  category       Category?
+  gameMode       GameMode @default(SINGLE)
+  details        Json?    // Answer breakdown
+  createdAt      DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id])
+}
+```
+
+## User Statistics Updates
+
+When a game is finished (see `game.service.ts:189-202`), the following user fields are updated:
+
+- `gamesPlayed`: Incremented by 1
+- `highScore`: Updated if new score exceeds previous best
+- Leaderboard entry created/updated if this is a new high score
+
+## Example Request
+
+```bash
+curl -X POST https://api.geochallenge.com/api/game/finish \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGc..." \
+  -d '{
+    "answers": [
+      {
+        "questionId": "clx1234567890",
+        "answer": "España",
+        "timeRemaining": 7.5
+      },
+      {
+        "questionId": "clx0987654321",
+        "answer": "Francia",
+        "timeRemaining": 3.2
+      }
+    ],
+    "category": "FLAG"
+  }'
+```
+
+## Example Response
+
+```json
+{
+  "message": "Partida finalizada",
+  "gameId": "clxABC123",
+  "totalScore": 1247,
+  "correctCount": 8,
+  "totalQuestions": 10,
+  "accuracy": 80,
+  "isHighScore": true,
+  "details": [
+    {
+      "questionId": "clx1234567890",
+      "isCorrect": true,
+      "correctAnswer": "España",
+      "userAnswer": "España",
+      "points": 137,
+      "timeRemaining": 7.5
+    },
+    {
+      "questionId": "clx0987654321",
+      "isCorrect": false,
+      "correctAnswer": "Italia",
+      "userAnswer": "Francia",
+      "points": 0,
+      "timeRemaining": 3.2
+    },
+    {
+      "questionId": "clxMAP123",
+      "isCorrect": true,
+      "correctAnswer": "Japón",
+      "userAnswer": "Japón",
+      "points": 142,
+      "distance": 125.3,
+      "timeRemaining": 5.8
+    }
+  ]
+}
+```
+
+## Scoring Breakdown
+
+The total score is calculated by summing points from all answers:
+
+- **Correct multiple-choice**: `basePoints + timeBonus` (100-150 pts)
+- **Incorrect**: 0 points
+- **MAP questions**: `(basePoints + timeBonus) * accuracyFactor`
+  - Accuracy factor = `1 - (distance / 2000km)`
+  - Distance < 500km = "correct"
+  - Distance > 2000km = 0 points
+
+See `scoring.ts` for detailed formulas:
+- Multiple choice: `scoring.ts:30-33`
+- MAP scoring: `scoring.ts:38-52`
+- Time bonus: `scoring.ts:15-22`
+
+## GET /api/game/history
+
+Retrieve game history for the authenticated user:
+
+**Query Parameters:**
+- `limit` (optional): Number of games to return (default: 10, max: 50)
+
+**Response:**
+
+```json
+{
+  "history": [
+    {
+      "id": "clxABC123",
+      "score": 1247,
+      "correctCount": 8,
+      "totalQuestions": 10,
+      "category": "FLAG",
+      "gameMode": "SINGLE",
+      "createdAt": "2026-03-01T10:30:00Z"
+    }
+  ]
+}
+```

@@ -1,0 +1,524 @@
+---
+title: Backend Architecture
+description: Understanding the Node.js/Express API structure
+---
+
+# Backend Architecture
+
+The GeoChallenge backend is a Node.js application built with Express, TypeScript, Prisma, and Socket.IO for real-time features.
+
+## Tech Stack
+
+| Technology | Version | Purpose |
+|------------|---------|----------|
+| Node.js | 20+ | Runtime environment |
+| Express | 4.18 | Web framework |
+| TypeScript | 5.4 | Type safety |
+| Prisma | 5.10 | ORM and migrations |
+| PostgreSQL | 14+ | Relational database |
+| Redis | 6+ | Caching and sessions |
+| Socket.IO | 4.7 | WebSocket server |
+| JWT | 9.0 | Authentication tokens |
+| Bcrypt | 2.4 | Password hashing |
+| Zod | 3.22 | Schema validation |
+| Helmet | 7.1 | Security headers |
+| Vitest | 1.3 | Unit testing |
+
+## Project Structure
+
+```
+backend/
+├── src/
+│   ├── controllers/        # Route handlers
+│   │   ├── auth.controller.ts
+│   │   ├── game.controller.ts
+│   │   ├── leaderboard.controller.ts
+│   │   └── challenge.controller.ts
+│   ├── services/           # Business logic
+│   │   ├── auth.service.ts
+│   │   ├── game.service.ts
+│   │   └── matchmaking.service.ts
+│   ├── sockets/            # Socket.IO handlers
+│   │   ├── index.ts
+│   │   ├── duel.socket.ts
+│   │   └── challenge.socket.ts
+│   ├── middleware/         # Express middleware
+│   │   ├── auth.middleware.ts
+│   │   └── rateLimit.ts
+│   ├── config/             # Configuration
+│   │   ├── database.ts
+│   │   ├── redis.ts
+│   │   └── env.ts
+│   ├── utils/              # Helper functions
+│   │   ├── jwt.ts
+│   │   └── validation.ts
+│   ├── types/              # TypeScript types
+│   ├── index.ts            # Application entry point
+│   └── seed.ts             # Database seeding script
+├── prisma/
+│   ├── schema.prisma       # Database schema
+│   └── migrations/         # SQL migrations
+├── tests/                  # Unit tests
+├── .env                    # Environment variables
+└── package.json
+```
+
+## Application Entry Point
+
+The main server file is `src/index.ts`:
+
+```typescript
+import express from 'express';
+import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+import { connectDatabase, prisma } from './config/database.js';
+import { getRedis } from './config/redis.js';
+
+const app = express();
+const httpServer = createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: config.frontend.url,
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+});
+
+// Middleware
+app.use(helmet());
+app.use(cors({ origin: config.frontend.url, credentials: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(globalLimiter);
+
+// Health check
+app.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    const redis = getRedis();
+    await redis.ping();
+    res.json({ status: 'ok', db: 'ok', redis: 'ok' });
+  } catch (error) {
+    res.status(503).json({ status: 'degraded', error: error.message });
+  }
+});
+
+// API Routes
+app.use('/api/auth', authController);
+app.use('/api/game', gameController);
+app.use('/api/leaderboard', leaderboardController);
+app.use('/api/challenges', challengeController);
+
+// Socket.IO handlers
+setupSocketHandlers(io);
+
+// Start server
+async function start() {
+  await connectDatabase();
+  getRedis();
+  httpServer.listen(config.port, () => {
+    console.log(`🚀 Server running on port ${config.port}`);
+  });
+}
+
+start();
+```
+
+## Database Configuration
+
+Prisma is configured in `src/config/database.ts`:
+
+```typescript
+import { PrismaClient } from '@prisma/client';
+
+export const prisma = new PrismaClient({
+  log: process.env.NODE_ENV === 'development' 
+    ? ['query', 'error', 'warn'] 
+    : ['error'],
+});
+
+export async function connectDatabase(): Promise<void> {
+  try {
+    await prisma.$connect();
+    console.log('✅ Database connected successfully');
+  } catch (error) {
+    console.error('❌ Database connection failed:', error);
+    process.exit(1);
+  }
+}
+
+export async function disconnectDatabase(): Promise<void> {
+  await prisma.$disconnect();
+  console.log('Database disconnected');
+}
+```
+
+### Environment Variables
+
+Required variables in `.env`:
+
+```bash
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/geochallenge"
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+
+# JWT
+JWT_SECRET="your-super-secret-jwt-key"
+
+# Server
+PORT=3001
+NODE_ENV=development
+
+# Frontend (for CORS)
+FRONTEND_URL="http://localhost:5173"
+```
+
+## API Routes
+
+### Authentication (`/api/auth`)
+
+**POST `/api/auth/register`**
+
+Register a new user.
+
+```json
+// Request
+{
+  "username": "player1",
+  "email": "player1@example.com",
+  "password": "securePassword123"
+}
+
+// Response
+{
+  "user": {
+    "id": "clx...",
+    "username": "player1",
+    "email": "player1@example.com"
+  },
+  "token": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+**POST `/api/auth/login`**
+
+Login with email and password.
+
+```json
+// Request
+{
+  "email": "player1@example.com",
+  "password": "securePassword123"
+}
+
+// Response
+{
+  "user": { ... },
+  "token": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+**Email normalization** (v1.2.49): Emails are trimmed and lowercased automatically.
+
+### Game (`/api/game`)
+
+**GET `/api/game/questions?category=FLAG&count=10`**
+
+Fetch questions for a game session.
+
+**POST `/api/game/submit`**
+
+Submit game results.
+
+```json
+{
+  "score": 850,
+  "correctCount": 8,
+  "totalQuestions": 10,
+  "category": "FLAG",
+  "details": [ ... ]
+}
+```
+
+### Leaderboard (`/api/leaderboard`)
+
+**GET `/api/leaderboard/top?limit=100`**
+
+Get top players by high score.
+
+**GET `/api/leaderboard/user/:userId`**
+
+Get user's rank and stats.
+
+### Challenges (`/api/challenges`)
+
+**POST `/api/challenges`**
+
+Create a new challenge.
+
+**GET `/api/challenges/:id`**
+
+Get challenge details.
+
+**POST `/api/challenges/:id/join`**
+
+Join a challenge.
+
+## Real-Time Features (Socket.IO)
+
+### Duels
+
+Real-time 1v1 matches:
+
+```typescript
+// Client joins duel queue
+socket.emit('duel:join', { category: 'FLAG' });
+
+// Server matches two players
+socket.on('duel:matched', ({ opponentId, opponentName, questions }) => {
+  console.log('Matched with:', opponentName);
+});
+
+// Players submit answers
+socket.emit('duel:answer', { questionIndex: 0, answer: 'Brazil' });
+
+// Receive opponent's answer
+socket.on('duel:opponentAnswered', ({ questionIndex, isCorrect }) => {
+  // Show opponent progress
+});
+
+// Game ends
+socket.on('duel:finished', ({ winnerId, yourScore, opponentScore }) => {
+  // Show results
+});
+```
+
+### Challenges
+
+Asynchronous multi-player games:
+
+```typescript
+// Join a challenge
+socket.emit('challenge:join', { challengeId: 'clx...' });
+
+// Receive challenge data
+socket.on('challenge:data', ({ challenge, questions }) => {
+  // Start game
+});
+
+// Submit progress
+socket.emit('challenge:answer', { 
+  challengeId: 'clx...', 
+  questionIndex: 0, 
+  answer: 'Paris' 
+});
+
+// Receive leaderboard updates
+socket.on('challenge:leaderboard', ({ participants }) => {
+  // Update UI
+});
+```
+
+## Authentication & Authorization
+
+### JWT Tokens
+
+Authentication uses JSON Web Tokens:
+
+```typescript
+import jwt from 'jsonwebtoken';
+
+// Generate token on login
+const token = jwt.sign(
+  { userId: user.id, email: user.email },
+  process.env.JWT_SECRET!,
+  { expiresIn: '7d' }
+);
+
+// Verify token in middleware
+const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+```
+
+### Auth Middleware
+
+Protect routes with middleware:
+
+```typescript
+import { authenticateToken } from './middleware/auth.middleware.js';
+
+app.get('/api/profile', authenticateToken, (req, res) => {
+  const userId = req.user.userId;
+  // Fetch user profile
+});
+```
+
+### Rate Limiting
+
+Protect against abuse:
+
+```typescript
+import rateLimit from 'express-rate-limit';
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 requests per window
+  message: 'Too many login attempts, please try again later',
+});
+
+app.post('/api/auth/login', authLimiter, loginHandler);
+```
+
+## Redis Integration
+
+Redis is used for caching and session management:
+
+```typescript
+import Redis from 'ioredis';
+
+const redis = new Redis(process.env.REDIS_URL);
+
+// Cache leaderboard
+await redis.setex('leaderboard:top100', 60, JSON.stringify(topPlayers));
+
+// Get cached data
+const cached = await redis.get('leaderboard:top100');
+if (cached) return JSON.parse(cached);
+
+// Store active duel sessions
+await redis.setex(`duel:${sessionId}`, 600, JSON.stringify(duelData));
+```
+
+## Testing
+
+### Unit Tests (Vitest)
+
+Test services and utilities:
+
+```typescript
+import { describe, it, expect } from 'vitest';
+import { validateAnswer } from './game.service.js';
+
+describe('Game Service', () => {
+  it('validates correct answers', () => {
+    const result = validateAnswer('Brazil', 'Brazil');
+    expect(result).toBe(true);
+  });
+  
+  it('normalizes case-insensitive answers', () => {
+    const result = validateAnswer('BRAZIL', 'Brazil');
+    expect(result).toBe(true);
+  });
+});
+```
+
+**Run:** `npm run test`
+
+### Integration Tests
+
+Test API endpoints:
+
+```typescript
+import request from 'supertest';
+import { app } from '../index.js';
+
+it('POST /api/auth/register creates a new user', async () => {
+  const response = await request(app)
+    .post('/api/auth/register')
+    .send({
+      username: 'testuser',
+      email: 'test@example.com',
+      password: 'password123',
+    });
+    
+  expect(response.status).toBe(201);
+  expect(response.body.user.username).toBe('testuser');
+});
+```
+
+## Database Seeding
+
+Populate the database with questions:
+
+```bash
+npm run seed
+```
+
+The `src/seed.ts` script:
+- Creates questions for all categories (FLAG, CAPITAL, MAP, SILHOUETTE)
+- Assigns difficulty levels (EASY, MEDIUM, HARD)
+- Includes metadata (imageUrl, latitude/longitude, continent)
+
+## Deployment
+
+### Production Build
+
+```bash
+npm run build
+```
+
+Outputs compiled JavaScript to `dist/`.
+
+### Start Production Server
+
+```bash
+npm run start:prod
+```
+
+This will:
+1. Run pending migrations: `npx prisma migrate deploy`
+2. Start the server: `node dist/index.js`
+
+### Environment Setup
+
+Ensure production environment variables are set:
+- `DATABASE_URL`: Production PostgreSQL connection string
+- `REDIS_URL`: Production Redis connection string
+- `JWT_SECRET`: Strong secret key (at least 32 characters)
+- `FRONTEND_URL`: Production frontend URL (for CORS)
+- `NODE_ENV=production`
+
+## Security Best Practices
+
+1. **Never commit `.env`** - Add to `.gitignore`
+2. **Use Helmet** - Security headers are enabled by default
+3. **Rate limiting** - All auth endpoints have rate limits
+4. **Password hashing** - Bcrypt with salt rounds of 10
+5. **JWT expiration** - Tokens expire after 7 days
+6. **Input validation** - Zod schemas validate all inputs
+7. **CORS** - Only allow requests from configured frontend URL
+8. **SQL injection** - Prisma parameterizes all queries
+
+## Monitoring
+
+### Health Check
+
+The `/health` endpoint verifies:
+- Database connectivity
+- Redis connectivity
+- Current timestamp
+
+**GitHub Actions** pings this endpoint every 10 minutes to keep the backend awake (v1.2.14).
+
+### Logging
+
+Prisma query logs are enabled in development:
+
+```typescript
+log: ['query', 'error', 'warn']
+```
+
+In production, only errors are logged.
+
+## Performance Optimization
+
+1. **Redis caching** - Cache frequently accessed data (leaderboards, questions)
+2. **Database indexing** - Unique indexes on `username` and `email`
+3. **Connection pooling** - Prisma manages database connection pool
+4. **Payload limits** - JSON body limited to 1MB
+5. **Lazy loading** - Socket connections only when needed
+
+## Next Steps
+
+- [Database Schema](/development/database) - Explore Prisma models in detail
+- [Frontend Architecture](/development/frontend) - Learn how the client consumes the API
