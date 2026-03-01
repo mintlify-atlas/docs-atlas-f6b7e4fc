@@ -1,0 +1,127 @@
+{
+  "projectType": "saas",
+  "projectName": "GeoChallenge",
+  "projectDescription": "A geography trivia game with single-player, real-time duels, and friend challenges featuring flags, capitals, and interactive maps.",
+  "theme": "palm",
+  "primaryColor": "#2563eb",
+  "lightColor": "#3b82f6",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/game-modes",
+              "features/categories",
+              "features/challenges",
+              "features/duels",
+              "features/leaderboards"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/setup",
+              "development/frontend",
+              "development/backend",
+              "development/database"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/github-pages",
+              "deployment/backend-hosting",
+              "deployment/environment-variables"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth/register",
+              "api/auth/login",
+              "api/auth/me"
+            ]
+          },
+          {
+            "group": "Game",
+            "pages": [
+              "api/game/start",
+              "api/game/answer",
+              "api/game/results"
+            ]
+          },
+          {
+            "group": "Challenges",
+            "pages": [
+              "api/challenges/create",
+              "api/challenges/list",
+              "api/challenges/join",
+              "api/challenges/results"
+            ]
+          },
+          {
+            "group": "Leaderboards",
+            "pages": [
+              "api/leaderboards/global",
+              "api/leaderboards/user"
+            ]
+          },
+          {
+            "group": "WebSocket Events",
+            "pages": [
+              "api/websocket/duel-matchmaking",
+              "api/websocket/duel-gameplay"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Three game modes: Single-player, Real-time duels, and Friend challenges",
+    "Multiple question categories: Flags, Capitals, and Interactive maps",
+    "Real-time multiplayer using Socket.IO",
+    "Progressive Web App (PWA) with offline support",
+    "Mobile-first responsive design with dark mode",
+    "Global leaderboards and player statistics",
+    "JWT authentication and user profiles",
+    "Rate limiting and security middleware"
+  ],
+  "publicApiSurface": [
+    "POST /api/auth/register",
+    "POST /api/auth/login",
+    "GET /api/auth/me",
+    "POST /api/game/start",
+    "POST /api/game/answer",
+    "POST /api/game/finish",
+    "GET /api/game/results/:id",
+    "POST /api/challenges",
+    "GET /api/challenges",
+    "GET /api/challenges/:id",
+    "POST /api/challenges/:id/join",
+    "POST /api/challenges/:id/answer",
+    "GET /api/leaderboard/global",
+    "GET /api/leaderboard/user/:id",
+    "WS duel:join-queue",
+    "WS duel:match-found",
+    "WS duel:answer-submitted",
+    "WS duel:game-ended"
+  ]
+}
